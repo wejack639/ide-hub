@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ide-hub.local/schemas/session-migration-request-v1.schema.json",
+  "title": "IDE Hub Codex session migration request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceProduct",
+    "targetProduct",
+    "sourceThreadId",
+    "contextPolicy",
+    "dryRun"
+  ],
+  "properties": {
+    "sourceProduct": { "const": "codex" },
+    "targetProduct": { "enum": ["qoder-international", "qoder-cn", "cursor"] },
+    "sourceThreadId": { "type": "string", "minLength": 1 },
+    "contextPolicy": { "const": "goal-recent-plan-v1" },
+    "dryRun": { "type": "boolean" }
+  }
+}

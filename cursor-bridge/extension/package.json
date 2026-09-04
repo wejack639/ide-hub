@@ -1,0 +1,22 @@
+{
+  "name": "cursor-session-bridge",
+  "displayName": "IDE Hub Cursor Session Bridge",
+  "description": "Local bridge used by IDE Hub to invoke Cursor's native chat import command.",
+  "version": "0.7.0",
+  "publisher": "ide-hub",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "*",
+    "onUri"
+  ],
+  "extensionKind": [
+    "ui"
+  ]
+}

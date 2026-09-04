@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="cursor-session-bridge" Version="0.7.0" Publisher="ide-hub" />
+    <DisplayName>IDE Hub Cursor Session Bridge</DisplayName>
+    <Description xml:space="preserve">Local bridge used by IDE Hub to invoke Cursor native chat import.</Description>
+    <Tags>cursor,local,migration</Tags>
+    <Categories>Other</Categories>
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.90.0" />
+      <Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free" />
+    </Properties>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code" />
+  </Installation>
+  <Dependencies />
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />
+  </Assets>
+</PackageManifest>

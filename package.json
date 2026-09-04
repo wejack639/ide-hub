@@ -1,0 +1,32 @@
+{
+  "name": "ide-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first desktop IDE session migration core",
+  "main": "desktop/main.cjs",
+  "bin": {
+    "ide-hub": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "start": "node dist/src/cli.js",
+    "desktop": "npm run build && electron .",
+    "desktop:package": "npm run build && node desktop/package.mjs"
+  },
+  "dependencies": {
+    "json5": "2.2.3"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@types/node": "25.5.0",
+    "electron": "44.1.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IDE Hub</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="desktop">
+  <div class="app-window">
+
+    <!-- ======== Title bar ======== -->
+    <header class="titlebar">
+      <div class="tb-title"><span class="tb-logo">IH</span>IDE Hub<span class="tb-ver">0.1.0 · 本地桌面版</span></div>
+      <div class="tb-actions">
+        <button class="btn btn-ghost" id="btnImportZip">导入会话 ZIP</button>
+        <button class="btn btn-ghost" id="btnExportZip">导出会话 ZIP</button>
+        <button class="btn btn-primary" id="btnNewMigration">＋ 新建会话迁移</button>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <!-- ======== Icon rail ======== -->
+      <nav class="rail">
+        <button class="rail-btn active" data-view="sessions" title="会话总览">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="rail-btn" data-view="mcp" title="MCP 管理">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button class="rail-btn" data-view="jobs" title="迁移任务">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </button>
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" data-view="settings" title="设置">
+          <svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+        </button>
+      </nav>
+
+      <!-- ======== View: Sessions ======== -->
+      <main id="view-sessions" class="view active">
+        <aside class="col-products">
+          <div class="col-head">
+            <span>已发现产品</span>
+            <button class="mini-btn" id="btnRescan" title="重新扫描本机">重新扫描</button>
+          </div>
+          <div id="productList" class="product-list"></div>
+          <div class="products-foot">
+            <span class="dot dot-ok"></span>离线运行 · 不发起网络请求
+          </div>
+        </aside>
+
+        <section class="col-sessions">
+          <div class="searchbar">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="searchInput" placeholder="搜索标题、路径、日期或源产品">
+          </div>
+          <div class="selection-bar" id="selectionBar" hidden>
+            <span class="sel-count">已选 <b id="selCount">0</b> 个会话</span>
+            <div class="sel-btns">
+              <button class="btn btn-primary btn-sm" id="selMigrate">开始迁移</button>
+              <button class="btn btn-ghost btn-sm" id="selExport">导出 ZIP</button>
+              <button class="btn btn-ghost btn-sm" id="selClear">取消选择</button>
+            </div>
+          </div>
+          <div class="sess-scroll" id="sessionList"></div>
+        </section>
+
+        <aside class="col-detail" id="detailPanel"></aside>
+      </main>
+
+      <!-- ======== View: MCP ======== -->
+      <main id="view-mcp" class="view">
+        <aside class="mcp-list-col">
+          <div class="col-head"><span>全局 MCP 配置</span><span class="muted" id="mcpCount"></span></div>
+          <div class="mcp-search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input id="mcpSearchInput" placeholder="搜索 server">
+          </div>
+          <div class="mcp-global-actions">
+            <button class="btn btn-primary btn-sm" id="btnMcpMigration">迁移整套配置</button>
+            <div class="mcp-portable-actions">
+              <button class="btn btn-ghost btn-sm" data-toast="已选择 MCP 配置包（演示）">导入配置包</button>
+              <button class="btn btn-ghost btn-sm" data-toast="已导出独立 MCP 配置包（演示）">导出配置包</button>
+            </div>
+            <span>按产品迁移一次 · 与任何会话无关</span>
+          </div>
+          <div id="mcpServerList" class="mcp-server-list"></div>
+        </aside>
+        <section class="mcp-detail-col" id="mcpDetail"></section>
+      </main>
+
+      <!-- ======== View: Jobs ======== -->
+      <main id="view-jobs" class="view">
+        <section class="jobs-col">
+          <div class="jobs-head">
+            <h2>任务中心</h2>
+            <span class="muted">会话任务与 MCP 配置任务独立记录、独立回滚</span>
+          </div>
+          <div id="jobsTable" class="jobs-table"></div>
+          <div class="jobs-note card">
+            <div class="card-title">说明</div>
+            <ul class="plain-list">
+              <li>任何写入后失败进入 <code>ROLLBACK_PENDING → ROLLED_BACK / ROLLBACK_FAILED</code>。</li>
+              <li>会话任务和 MCP 配置任务使用不同 task type 与 idempotency key，互不调用。</li>
+              <li>导入失败时 staging 保留到用户关闭任务或主动删除，不留下半写入的目标配置。</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <!-- ======== View: Settings ======== -->
+      <main id="view-settings" class="view">
+        <section class="settings-col">
+          <div class="jobs-head">
+            <h2>设置</h2>
+            <span class="muted">本地存储与离线边界</span>
+          </div>
+
+          <div class="card">
+            <div class="card-title">离线模式 <span class="badge b-info">强制开启</span></div>
+            <p class="card-p">IDE Hub 不发起网络请求、不内置模型 SDK、不读取模型 API Key。目标 IDE 继续对话时使用它自己的账号与模型配置，与 IDE Hub 无关。</p>
+            <div class="switch-row locked"><span>禁止任何网络请求（含远程 MCP 校验）</span><label class="switch on locked"><input type="checkbox" checked disabled><i></i></label></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">数据目录</div>
+            <div class="kv-grid cols2">
+              <div class="kv-item"><div class="kv-k">路径</div><div class="kv-v mono">~/Library/Application Support/IDE Hub/</div></div>
+              <div class="kv-item"><div class="kv-k">占用</div><div class="kv-v">128 MB（capsules · backups · jobs · logs）</div></div>
+            </div>
+            <div class="row-btns">
+              <button class="btn btn-ghost btn-sm" data-toast="已在 Finder 中打开数据目录（演示）">打开目录</button>
+              <button class="btn btn-ghost btn-sm" data-toast="已清理 3 个过期备份 · 释放 41 MB（演示）">清理缓存</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">备份与回滚</div>
+            <div class="kv-grid cols2">
+              <div class="kv-item"><div class="kv-k">策略</div><div class="kv-v">内容寻址备份 · 写前自动创建</div></div>
+              <div class="kv-item"><div class="kv-k">保留</div><div class="kv-v">最近 30 份</div></div>
+            </div>
+            <div class="row-btns">
+              <button class="btn btn-ghost btn-sm" data-toast="备份管理页（演示）">管理备份</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">实验特性</div>
+            <div class="switch-row">
+              <div>
+                <div>D 级原生投影</div>
+                <div class="switch-sub">需版本锁定 + 完整备份 + 真实回归测试全部满足时开放</div>
+              </div>
+              <label class="switch"><input type="checkbox"><i></i></label>
+            </div>
+            <div class="switch-row">
+              <div>
+                <div>受控同步（源新增 turn → 新快照）</div>
+                <div class="switch-sub">Phase 4 · 尚未实现</div>
+              </div>
+              <label class="switch disabled"><input type="checkbox" disabled><i></i></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">关于</div>
+            <p class="card-p">IDE Hub 0.1.0 · Tauri 2 桌面壳 + Rust 核心（原型演示，不含真实功能）。产品语义：迁移是复制并分叉，不是搬走；源端永远只读。</p>
+          </div>
+        </section>
+      </main>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- Wizard: Session migration (7 steps)                            -->
+<!-- ============================================================= -->
+<div class="overlay" id="ovMigration" data-wiz="migration">
+  <div class="wizard wiz-lg">
+    <header class="wiz-head">
+      <div class="wiz-title">
+        <h2>迁移向导</h2>
+        <span class="wiz-sub">Codex → Qoder 国际版 · 原生历史迁移</span>
+      </div>
+      <button class="icon-btn wiz-close" data-wiz-close>✕</button>
+    </header>
+
+    <div class="wiz-steps" data-steps></div>
+
+    <div class="wiz-body">
+
+      <!-- Step 1: source session -->
+      <div class="wiz-pane" data-pane="1">
+        <h3 class="pane-title">选择源会话</h3>
+        <p class="pane-sub">迁移是<b>复制并分叉</b>，不是搬走 — 源会话保持不变，目标端创建一个新会话并记录来源关系。</p>
+
+        <div class="card">
+          <div class="sess-summary-head">
+            <span class="prod-tag codex">Codex</span>
+            <strong>调研各 IDE 会话存储并设计迁移方案</strong>
+            <span class="badge b-ok">空闲</span>
+          </div>
+          <div class="kv-grid cols3">
+            <div class="kv-item"><div class="kv-k">工作区</div><div class="kv-v mono">~/develop/IdeaProjects/tools/ide-hub</div></div>
+            <div class="kv-item"><div class="kv-k">分支</div><div class="kv-v"><span class="branch-badge">main</span></div></div>
+            <div class="kv-item"><div class="kv-k">更新时间</div><div class="kv-v">今天 14:32</div></div>
+            <div class="kv-item"><div class="kv-k">规模</div><div class="kv-v">47 轮 · 2.1 MB</div></div>
+            <div class="kv-item"><div class="kv-k">状态</div><div class="kv-v ok">空闲 · 最近 turn 已完成</div></div>
+            <div class="kv-item"><div class="kv-k">来源</div><div class="kv-v mono">~/.codex/sessions/…/rollout-2026-08-31.jsonl</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">源一致性检查</div>
+          <div class="kv-grid cols2">
+            <div class="kv-item"><div class="kv-k">文件大小 / mtime</div><div class="kv-v">2.1 MB · 今天 14:32</div></div>
+            <div class="kv-item"><div class="kv-k">sha256（迁移前）</div><div class="kv-v mono">a3f9…c21e 已记录</div></div>
+            <div class="kv-item"><div class="kv-k">读取方式</div><div class="kv-v">只读 · 完整行解析，忽略半行</div></div>
+            <div class="kv-item"><div class="kv-k">源端保护</div><div class="kv-v ok">迁移前后复核 hash，验证源未被修改</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: target agent + workspace + context tier -->
+      <div class="wiz-pane" data-pane="2">
+        <h3 class="pane-title">选择目标 Agent 与工作区</h3>
+        <p class="pane-sub">按目标端动态声明能力（A/B/C/D），默认选择顺序 A → B → C。</p>
+
+        <div class="tgt-grid" id="tgtGrid">
+          <button class="tcard selected" data-target="qoder-international">
+            <span class="prod-tag qoder">Qoder 国际版</span>
+            <span class="cap cap-b">原生历史 · 已实现</span>
+            <span class="tcard-desc">同工作区创建原生会话，逐轮写入并回读校验</span>
+            <span class="tcard-flag">检测安装状态中</span>
+          </button>
+          <button class="tcard" data-target="qoder-cn">
+            <span class="prod-tag qoder">Qoder CN</span>
+            <span class="cap cap-b">原生历史 · 已实现</span>
+            <span class="tcard-desc">使用独立 CN runtime 创建原生会话并回读校验</span>
+            <span class="tcard-flag">检测安装状态中</span>
+          </button>
+          <button class="tcard" data-target="codex">
+            <span class="prod-tag codex">Codex</span>
+            <span class="cap cap-c">C 级 · 外部源</span>
+            <span class="tcard-desc">Claude/Cursor 源可走官方 /import（A 级），当前源走交接</span>
+          </button>
+          <button class="tcard" data-target="claude">
+            <span class="prod-tag claude">Claude Code</span>
+            <span class="cap cap-c">C 级 · 交接 + 命令</span>
+            <span class="tcard-desc">生成 Handoff 与建议启动命令，不把 prompt 传给 CLI</span>
+          </button>
+          <button class="tcard" data-target="cursor">
+            <span class="prod-tag cursor">Cursor</span>
+            <span class="cap cap-b">原生历史 · 已实现</span>
+            <span class="tcard-desc">Chat JSON v1 + Cursor 内置导入；同工作区原生回读</span>
+            <span class="tcard-flag">检测安装状态中</span>
+          </button>
+          <button class="tcard" data-target="zcode">
+            <span class="prod-tag zcode">ZCode</span>
+            <span class="cap cap-c">C 级 · 交接</span>
+            <span class="tcard-desc">先检查同作用域 .zcode 配置是否使 .agents 失效</span>
+          </button>
+          <button class="tcard" data-target="codebuddy">
+            <span class="prod-tag codebuddy">CodeBuddy CN</span>
+            <span class="cap cap-c">C 级 · 交接</span>
+            <span class="tcard-desc">CLI 不在 PATH，App 内 runtime 发现后可升级 A/B</span>
+          </button>
+          <button class="tcard" data-target="dsh">
+            <span class="prod-tag dsh">DeepSeek Harness</span>
+            <span class="cap cap-c">C / D 级</span>
+            <span class="tcard-desc">C 级生成 Handoff；D 级 seed 需实验开关</span>
+          </button>
+          <button class="tcard" data-target="pi">
+            <span class="prod-tag pi">Pi</span>
+            <span class="cap cap-b">B / D 级 · 实验</span>
+            <span class="tcard-desc">SessionManager 本地写入会话条目，不触发模型请求</span>
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">目标工作区</div>
+          <div class="ws-select">
+            <select>
+              <option selected>/Users/domino/develop/IdeaProjects/tools/ide-hub — main · 已检出</option>
+              <option>/Users/domino/develop/IdeaProjects/clx-order — feature/payment-retry</option>
+              <option>选择其他本地目录…</option>
+            </select>
+          </div>
+          <div class="muted-note">目标会话启动时重新读取目标工作区规则（AGENTS.md / CLAUDE.md 等），与交接包旧规则冲突时报告差异，不静默覆盖。</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">上下文装载档位</div>
+          <div class="rcards">
+            <label class="rcard">
+              <input type="radio" name="ctxTier" value="lite">
+              <div class="rcard-head">精简</div>
+              <div class="rcard-desc">Handoff 结构化字段 + 下一步</div>
+            </label>
+            <label class="rcard selected">
+              <input type="radio" name="ctxTier" value="std" checked>
+              <div class="rcard-head">标准 <span class="badge b-info">默认</span></div>
+              <div class="rcard-desc">Handoff + 最近 N 轮 + 关键证据</div>
+            </label>
+            <label class="rcard">
+              <input type="radio" name="ctxTier" value="deep">
+              <div class="rcard-head">深度</div>
+              <div class="rcard-desc">标准内容 + 通过已全局配置的 Context Bridge 搜索历史</div>
+            </label>
+          </div>
+          <div class="muted-note">任何档位都不把完整大历史一次性塞入模型上下文；超出预算时优先保留目标、约束、已验证事实与未完成项。</div>
+        </div>
+      </div>
+
+      <!-- Step 3: source idle check -->
+      <div class="wiz-pane" data-pane="3">
+        <h3 class="pane-title">源空闲检查</h3>
+        <p class="pane-sub">运行中的会话默认拒绝迁移，可选「等待完成」或「在已完成 turn 边界创建快照」。</p>
+
+        <div class="checklist" id="migIdleChecks">
+          <div class="check-item" data-check data-result="✓ 无 writer lock"><span class="ci-dot"></span><span class="ci-label">writer lock 检测</span><span class="ci-state">检查中…</span></div>
+          <div class="check-item" data-check data-result="✓ 已完成"><span class="ci-dot"></span><span class="ci-label">最新 turn 状态</span><span class="ci-state">检查中…</span></div>
+          <div class="check-item" data-check data-result="✓ 已建立（只读连接）"><span class="ci-dot"></span><span class="ci-label">SQLite 一致性快照</span><span class="ci-state">检查中…</span></div>
+          <div class="check-item" data-check data-result="✓ 已记录 a3f9…c21e"><span class="ci-dot"></span><span class="ci-label">源文件 hash 记录</span><span class="ci-state">检查中…</span></div>
+        </div>
+
+        <div class="banner banner-ok" id="migIdleBanner">源会话空闲，可以安全创建一致性快照。</div>
+
+        <div class="card alt-card">
+          <div class="card-title muted">如果源正在运行（当前不适用）</div>
+          <label class="radio-row disabled"><input type="radio" disabled><span>等待当前 turn 完成后自动继续</span></label>
+          <label class="radio-row disabled"><input type="radio" disabled><span>在已完成的 turn 边界创建快照（记录截断边界）</span></label>
+        </div>
+      </div>
+
+      <!-- Step 4: handoff preview -->
+      <div class="wiz-pane" data-pane="4">
+        <h3 class="pane-title">Handoff 预览</h3>
+        <p class="pane-sub">全部字段为<b>确定性抽取</b>（未调用模型）；带 <span class="ptr-chip">来源指针</span> 的事实可通过 Context Bridge 回查原文。</p>
+
+        <div class="handoff">
+          <div class="ho-sec">
+            <div class="ho-label">目标 objective</div>
+            <div class="ho-body">调研 8 个 Agent 的本地会话存储格式，设计统一 Capsule 与迁移方案，落地首个 Codex → Qoder CN 离线闭环。</div>
+          </div>
+
+          <div class="ho-sec">
+            <div class="ho-label">已确认事实</div>
+            <ul class="ho-list">
+              <li>Codex 会话位于 <code>~/.codex/sessions/**/*.jsonl</code> <span class="ptr-chip">消息 #12</span></li>
+              <li>App Server <code>thread/read</code> 可获取完整 turns <span class="ptr-chip">工具结果 #18</span></li>
+              <li>Qoder CN 会话按项目存于 <code>~/.qoder/projects/&lt;project&gt;/</code> <span class="ptr-chip">消息 #26</span></li>
+            </ul>
+          </div>
+
+          <div class="ho-sec">
+            <div class="ho-label">关键决策</div>
+            <ul class="ho-list">
+              <li>采用统一 IR（Capsule），避免 56 条 N×N 两两适配 <span class="ptr-chip">消息 #9</span></li>
+              <li><span class="dim">已否决</span> 直接写入 Cursor <code>state.vscdb</code> — schema 未公开且随版本变化 <span class="ptr-chip">消息 #15</span></li>
+            </ul>
+          </div>
+
+          <div class="ho-sec">
+            <div class="ho-label">约束</div>
+            <ul class="ho-list">
+              <li>全程离线，不调用模型、不需要 API Key</li>
+              <li>源端永远只读；写入前备份、可回滚</li>
+            </ul>
+          </div>
+
+          <div class="ho-grid">
+            <div class="ho-sec"><div class="ho-label">工作区状态</div><div class="ho-body sm">branch <code>feature/capsule-schema</code> · HEAD <code>a1b2c3d</code> · dirty 3 文件</div></div>
+            <div class="ho-sec"><div class="ho-label">验证</div><div class="ho-body sm"><span class="ok">✓ cargo test · 24 passed</span> · <span class="ok">✓ round-trip</span> · <span class="warn">⚠ 未运行：真实版本烟测</span></div></div>
+            <div class="ho-sec"><div class="ho-label">未解决问题</div><div class="ho-body sm">CodeBuddy CLI 不在 PATH，runtime 待发现</div></div>
+            <div class="ho-sec"><div class="ho-label">历史工具线索</div><div class="ho-body sm">保留 chrome-devtools / context7 / mysql-dev 的历史调用结果；不迁移 MCP 配置</div></div>
+          </div>
+
+          <div class="ho-sec">
+            <div class="ho-label">下一步 nextActions</div>
+            <ol class="ho-list ordered">
+              <li>实现 Capsule Store 校验与 checksums 生成</li>
+              <li>搭建 sentinel 验收 fixture 并跑通第一条真实迁移</li>
+              <li>验证目标 Agent 能从正确 nextAction 继续</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="banner banner-info">档位：<b>标准</b> — Handoff + 最近 N 轮 + 关键证据；完整历史保留在本地 Capsule，不一次性注入上下文。</div>
+      </div>
+
+      <!-- Step 5: loss report -->
+      <div class="wiz-pane" data-pane="5">
+        <h3 class="pane-title">兼容 / 损失报告</h3>
+        <p class="pane-sub">不展示「兼容率百分比」，逐项如实呈现。</p>
+
+        <table class="loss-table">
+          <thead><tr><th style="width:22%">项目</th><th style="width:18%">结果</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>消息与对话流</td><td><span class="loss-chip l-full">完整保留</span></td><td>47 轮全部进入 Capsule</td></tr>
+            <tr><td>文件改动摘要</td><td><span class="loss-chip l-full">完整保留</span></td><td>12 个文件 · +3,120 / −486</td></tr>
+            <tr><td>附件</td><td><span class="loss-chip l-full">完整保留</span></td><td>2 个附件，按 sha256 索引</td></tr>
+            <tr><td>工具调用历史</td><td><span class="loss-chip l-arch">仅归档</span></td><td>作为历史证据写入归档，不伪装为目标待执行调用</td></tr>
+            <tr><td>终端输出</td><td><span class="loss-chip l-summ">已摘要</span></td><td>仅保留命令与结论</td></tr>
+            <tr><td>计划 / TODO</td><td><span class="loss-chip l-summ">已摘要</span></td><td>合并进 Handoff 的 nextActions</td></tr>
+            <tr><td>检查点 / 快照</td><td><span class="loss-chip l-unsup">目标不支持</span></td><td>Qoder CN 无对应概念</td></tr>
+            <tr><td>权限与待批准</td><td><span class="loss-chip l-manual">需手动确认</span></td><td>目标端首次使用需重新批准</td></tr>
+            <tr><td>模型与计费</td><td><span class="loss-chip l-auth">需重新认证</span></td><td>使用目标 IDE 自己的账号与模型配置</td></tr>
+            <tr><td>系统指令 / 隐藏思维</td><td><span class="loss-chip l-skip">不迁移</span></td><td>按默认策略跳过，不复制供应商隐藏指令</td></tr>
+            <tr><td>工作区路径</td><td><span class="loss-chip l-full">完整保留</span></td><td>本机迁移，路径不变</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Step 6: write plan -->
+      <div class="wiz-pane" data-pane="6">
+        <h3 class="pane-title">确认实际写入内容</h3>
+        <p class="pane-sub">写入前自动备份 · 原子写入（临时文件 + fsync + rename）· 任何一步失败将回滚。</p>
+
+        <div class="ops">
+          <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>~/Library/Application Support/IDE Hub/capsules/mig_8f3a12/</code><div class="op-sub">manifest · conversation.jsonl · handoff.json / handoff.md · checksums.sha256</div></div></div>
+          <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>&lt;workspace&gt;/.ide-hub/handoffs/mig_8f3a12/handoff.md</code><div class="op-sub">交接摘要文件</div></div></div>
+          <div class="op-row"><span class="op-badge b-conf">检查</span><div class="op-main"><code>IDE Hub Context Bridge</code><div class="op-sub">Qoder CN 已全局配置，可直接读取迁移 ID；本次会话迁移不修改 MCP 配置</div></div></div>
+          <div class="op-row"><span class="op-badge b-open">打开</span><div class="op-main"><code>Qoder CN</code><div class="op-sub">迁移完成后打开目标工作区</div></div></div>
+        </div>
+
+        <label class="confirm-row"><input type="checkbox" id="migConfirm"><span>我已确认以上写入内容</span></label>
+      </div>
+
+      <!-- Step 7: execute -->
+      <div class="wiz-pane" data-pane="7">
+        <h3 class="pane-title">执行迁移</h3>
+        <div class="state-timeline" id="migTimeline"></div>
+        <div class="run-result" id="migResult" hidden>
+          <div class="result-card">
+            <div class="result-icon ok">✓</div>
+            <div>
+              <h4>迁移完成</h4>
+              <p class="muted">Capsule <code>mig_8f3a12</code> · 事件 1,284 条 · 附件 2 · checksum ✓ · 目标：Qoder CN（C 级交接）</p>
+            </div>
+          </div>
+          <div class="prompt-preview">
+            <div class="pp-title">首轮提示（已放入剪贴板）<button class="btn btn-ghost btn-sm" data-toast="已复制首轮提示（演示）">复制</button></div>
+            <pre>这是从 Codex 分叉出的继续工作会话，迁移 ID 为 mig_8f3a12。
+先读取交接摘要，核对当前工作区、Git 分支和未提交修改；
+历史工具结果只作为当时证据，对可能变化的外部状态重新验证。
+确认理解后，从 nextActions 的第一项继续，不要重复已完成工作。</pre>
+          </div>
+          <div class="result-actions">
+            <button class="btn btn-primary" id="migOpenTarget">打开 Qoder CN 继续</button>
+            <button class="btn btn-ghost" data-wiz-close>关闭向导</button>
+            <button class="btn btn-danger-ghost" id="migRollback">回滚此迁移</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer class="wiz-foot">
+      <div class="wiz-foot-info">仅迁移会话与工作区 · 不读取、不写入用户 MCP 配置</div>
+      <div class="wiz-foot-btns">
+        <button class="btn btn-ghost" data-wiz-close>取消</button>
+        <button class="btn btn-ghost" data-wiz-prev>上一步</button>
+        <button class="btn btn-primary" data-wiz-next>下一步</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- Wizard: Export ZIP (4 steps)                                    -->
+<!-- ============================================================= -->
+<div class="overlay" id="ovExport" data-wiz="export">
+  <div class="wizard">
+    <header class="wiz-head">
+      <div class="wiz-title">
+        <h2>导出为便携 ZIP</h2>
+        <span class="wiz-sub">跨电脑离线搬运 · IDE Hub 不负责文件传输</span>
+      </div>
+      <button class="icon-btn wiz-close" data-wiz-close>✕</button>
+    </header>
+
+    <div class="wiz-steps" data-steps></div>
+
+    <div class="wiz-body">
+
+      <!-- Step 1 -->
+      <div class="wiz-pane" data-pane="1">
+        <h3 class="pane-title">选择会话与工作区档位</h3>
+        <div class="card">
+          <div class="card-title">已选 3 个会话 · 自动按工作区分组</div>
+          <div class="exp-ws">
+            <div class="exp-ws-head"><span class="mono">~/develop/IdeaProjects/tools/ide-hub</span><span class="branch-badge">main</span></div>
+            <div class="exp-sess"><span class="prod-tag codex">Codex</span>调研各 IDE 会话存储并设计迁移方案<button class="exp-rm" data-toast="已从导出移除（演示）">✕</button></div>
+            <div class="exp-sess"><span class="prod-tag codex">Codex</span>实现 Capsule v1 schema 与 golden fixtures<button class="exp-rm" data-toast="已从导出移除（演示）">✕</button></div>
+            <div class="exp-sess"><span class="prod-tag qoder">Qoder CN</span>编写适配器契约测试<button class="exp-rm" data-toast="已从导出移除（演示）">✕</button></div>
+          </div>
+          <div class="exp-ws">
+            <div class="exp-ws-head"><span class="mono">~/develop/IdeaProjects/clx-order</span><span class="branch-badge">feature/payment-retry</span></div>
+            <div class="exp-sess"><span class="prod-tag claude">Claude Code</span>排查回调签名校验失败<button class="exp-rm" data-toast="已从导出移除（演示）">✕</button></div>
+          </div>
+        </div>
+
+        <div class="tier-cards">
+          <label class="tier-card">
+            <input type="radio" name="expTier" value="sessions" checked>
+            <div class="tier-head">仅会话 <span class="badge b-info">默认</span></div>
+            <div class="tier-desc">Capsule、Handoff、附件；不包含任何 MCP 配置</div>
+          </label>
+          <label class="tier-card">
+            <input type="radio" name="expTier" value="changes">
+            <div class="tier-head">会话 + 当前修改</div>
+            <div class="tier-desc">上述内容 + working-tree patch + 所选未跟踪文件</div>
+          </label>
+          <label class="tier-card">
+            <input type="radio" name="expTier" value="full">
+            <div class="tier-head">完整离线工作包</div>
+            <div class="tier-desc">上述内容 + Git bundle，家里无仓库也可恢复</div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="wiz-pane" data-pane="2">
+        <h3 class="pane-title">工作区与包含项</h3>
+
+        <div class="card">
+          <div class="card-title">ide-hub <span class="muted">· main · dirty 3 文件</span></div>
+          <div class="opt-row"><span>Git bundle（当前分支可达提交，离线可建仓）</span><span class="opt-size">34.2 MB</span><label class="switch on"><input type="checkbox" checked><i></i></label></div>
+          <div class="opt-row"><span>working-tree patch（staged + unstaged 二进制补丁）</span><span class="opt-size">128 KB</span><label class="switch on"><input type="checkbox" checked><i></i></label></div>
+          <div class="untracked">
+            <div class="untracked-title">未跟踪文件（按需勾选）</div>
+            <label class="untr-row"><input type="checkbox" checked data-size="12 KB"><span class="mono">fixtures/synthetic/</span><span class="opt-size">12 KB</span></label>
+            <label class="untr-row"><input type="checkbox" checked data-size="4 KB"><span class="mono">scripts/gen-fixture.py</span><span class="opt-size">4 KB</span></label>
+            <label class="untr-row"><input type="checkbox" data-size="2 KB"><span class="mono">notes.md</span><span class="opt-size">2 KB</span></label>
+            <div class="muted-note">node_modules、构建产物、IDE 索引已自动排除；submodule / worktree 分别列出，不混成一个补丁。</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">clx-order <span class="muted">· feature/payment-retry</span></div>
+          <div class="opt-row"><span>Git bundle</span><span class="opt-size muted">—</span><label class="switch"><input type="checkbox"><i></i></label></div>
+          <div class="opt-row"><span>working-tree patch</span><span class="opt-size muted">—</span><label class="switch"><input type="checkbox"><i></i></label></div>
+          <div class="muted-note">另一台电脑已有相同仓库时可不打包，仅做路径映射。</div>
+        </div>
+        <div class="banner banner-info">会话 ZIP 永远不包含 MCP。需要跨电脑带走 MCP 时，请在“全局 MCP 配置”页单独导出一次配置包。</div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="wiz-pane" data-pane="3">
+        <h3 class="pane-title">导出预览</h3>
+        <div class="card">
+          <div class="card-title">ZIP 结构（标准归档，系统工具可直接查看）</div>
+          <pre class="tree">idehub-export/
+├── bundle-manifest.json          bundleVersion 1 · bundleId a91c…
+├── checksums.sha256
+├── sessions/
+│   ├── 6f21…/  manifest · conversation.jsonl · handoff.* · loss-report.json
+│   ├── 8b7d…/  …
+│   └── 3c9e…/  …
+└── workspaces/
+    ├── w-ide-hub/   workspace.json · repo.bundle · working-tree.patch · untracked/
+    └── w-clx-order/ workspace.json</pre>
+        </div>
+        <div class="card">
+          <div class="card-title">体积构成</div>
+          <div class="sbars" id="expSizeBars">
+            <div class="sbar-row"><span class="sbar-k">会话 Capsule ×3</span><div class="sbar"><i style="width:6%"></i></div><span class="sbar-v">2.1 MB</span></div>
+            <div class="sbar-row"><span class="sbar-k">附件</span><div class="sbar"><i style="width:2%"></i></div><span class="sbar-v">0.8 MB</span></div>
+            <div class="sbar-row"><span class="sbar-k">Git bundle · working-tree patch · 未跟踪</span><div class="sbar"><i style="width:88%"></i></div><span class="sbar-v">34.3 MB</span></div>
+          </div>
+          <div class="sbar-total">预计 ZIP 大小 <b>37.3 MB</b></div>
+        </div>
+        <div class="banner banner-info">在临时目录完成组装并校验 checksum 后，一次性生成 ZIP；checksums.sha256 用于发现传输不完整，不做联网或远端签名校验。</div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="wiz-pane" data-pane="4">
+        <h3 class="pane-title">生成 ZIP</h3>
+        <div class="state-timeline" id="expTimeline"></div>
+        <div class="run-result" id="expResult" hidden>
+          <div class="result-card">
+            <div class="result-icon ok">✓</div>
+            <div>
+              <h4>导出完成</h4>
+              <p class="muted mono">~/Downloads/ide-hub-export-20260901-150230-f2e8.zip · 37.3 MB · 3 会话 · 2 工作区</p>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="btn btn-primary" data-toast="已在 Finder 中显示（演示）">在 Finder 中显示</button>
+            <button class="btn btn-ghost" data-wiz-close>完成</button>
+          </div>
+          <div class="banner banner-info">如何传到另一台电脑由你决定（U 盘 / 移动硬盘 / AirDrop…）— IDE Hub 不提供云传输。</div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer class="wiz-foot">
+      <div class="wiz-foot-info">全程离线 · 标准 ZIP · 不含账号与登录态</div>
+      <div class="wiz-foot-btns">
+        <button class="btn btn-ghost" data-wiz-close>取消</button>
+        <button class="btn btn-ghost" data-wiz-prev>上一步</button>
+        <button class="btn btn-primary" data-wiz-next>下一步</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- Wizard: Import ZIP (4 steps)                                    -->
+<!-- ============================================================= -->
+<div class="overlay" id="ovImport" data-wiz="import">
+  <div class="wizard">
+    <header class="wiz-head">
+      <div class="wiz-title">
+        <h2>导入便携 ZIP</h2>
+        <span class="wiz-sub">离线恢复 · 解压至临时 staging · 不产生半写入</span>
+      </div>
+      <button class="icon-btn wiz-close" data-wiz-close>✕</button>
+    </header>
+
+    <div class="wiz-steps" data-steps></div>
+
+    <div class="wiz-body">
+
+      <!-- Step 1 -->
+      <div class="wiz-pane" data-pane="1">
+        <h3 class="pane-title">ZIP 内容与 checksum 检查</h3>
+
+        <div class="card zip-card">
+          <div class="zip-icon">📦</div>
+          <div class="zip-info">
+            <strong class="mono">ide-hub-export-20260828-171205-a91c.zip</strong>
+            <div class="muted">41.8 MB · 创建于 2026-08-28 17:12 · 来源 macOS · aarch64 · IDE Hub 0.1.0</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-toast="文件选择器（演示）">重新选择</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">bundle-manifest.json</div>
+          <div class="kv-grid cols3">
+            <div class="kv-item"><div class="kv-k">bundleVersion</div><div class="kv-v">1（受支持）</div></div>
+            <div class="kv-item"><div class="kv-k">bundleId</div><div class="kv-v mono">a91c-44e2…</div></div>
+            <div class="kv-item"><div class="kv-k">创建时间</div><div class="kv-v">2026-08-28 17:12</div></div>
+            <div class="kv-item"><div class="kv-k">会话</div><div class="kv-v">2</div></div>
+            <div class="kv-item"><div class="kv-k">工作区</div><div class="kv-v">2</div></div>
+            <div class="kv-item"><div class="kv-k">MCP</div><div class="kv-v">不包含 · 独立迁移</div></div>
+          </div>
+        </div>
+
+        <div class="checklist static">
+          <div class="check-item done"><span class="ci-dot"></span><span class="ci-label">目录结构合法（entry 均为 staging 内相对路径）</span><span class="ci-state">✓</span></div>
+          <div class="check-item done"><span class="ci-dot"></span><span class="ci-label">checksums · 214 / 214 个文件匹配</span><span class="ci-state">✓</span></div>
+          <div class="check-item done"><span class="ci-dot"></span><span class="ci-label">bundleId 重复导入检测</span><span class="ci-state">✓ 未发现重复</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">包含会话</div>
+          <div class="exp-sess"><span class="prod-tag codex">Codex</span>调研各 IDE 会话存储并设计迁移方案 · 47 轮</div>
+          <div class="exp-sess"><span class="prod-tag codex">Codex</span>实现 Capsule v1 schema 与 golden fixtures · 31 轮</div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="wiz-pane" data-pane="2">
+        <h3 class="pane-title">Workspace 路径映射</h3>
+        <p class="pane-sub">绝对路径仅作提示，导入时不能直接复用；历史消息正文保持原样，Context Bridge 返回引用时同时给出原路径与映射后路径。</p>
+
+        <div class="map-row">
+          <div class="map-src mono">/company/work/project-a</div>
+          <span class="map-arrow">→</span>
+          <input class="map-dst mono" readonly value="点击「选择目录」…" data-mapped="0">
+          <button class="btn btn-ghost btn-sm" data-map-pick data-dst="/Users/domino/develop/IdeaProjects/tools/ide-hub" data-detail="main · HEAD 匹配">选择目录</button>
+          <span class="map-status warn" data-map-status>未映射</span>
+        </div>
+        <div class="map-row">
+          <div class="map-src mono">/company/work/shared-lib</div>
+          <span class="map-arrow">→</span>
+          <input class="map-dst mono" readonly value="点击「选择目录」…" data-mapped="0">
+          <button class="btn btn-ghost btn-sm" data-map-pick data-dst="/Users/domino/develop/shared-lib" data-detail="已存在">选择目录</button>
+          <span class="map-status warn" data-map-status>未映射</span>
+        </div>
+
+        <div class="banner banner-warn" id="impMapBanner">存在未映射路径：不阻止其他会话恢复；未映射路径将进入导入待办。</div>
+        <div class="muted-note">路径映射只保存在本机的导入任务中，不回写导出 ZIP。</div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="wiz-pane" data-pane="3">
+        <h3 class="pane-title">每个会话的目标 Agent</h3>
+
+        <div class="card">
+          <div class="tgt-sess-head"><span class="prod-tag codex">Codex</span>调研各 IDE 会话存储并设计迁移方案</div>
+          <div class="tgt-row">
+            <span class="k">目标 Agent</span>
+            <select>
+              <option selected>Qoder CN — C 级 · 交接 + Context Bridge</option>
+              <option>Claude Code — C 级 · 交接 + 启动命令</option>
+              <option>Cursor — C 级 · 交接文件</option>
+              <option>Codex — 同产品优先原生恢复（如有兼容官方载荷）</option>
+            </select>
+          </div>
+          <div class="tgt-cap">同产品原生恢复不可用（无官方载荷）→ 使用标准 Capsule 交接。<span class="ptr-chip">默认选择源 Agent，可跨产品</span></div>
+        </div>
+
+        <div class="card">
+          <div class="tgt-sess-head"><span class="prod-tag codex">Codex</span>实现 Capsule v1 schema 与 golden fixtures</div>
+          <div class="tgt-row">
+            <span class="k">目标 Agent</span>
+            <select>
+              <option>Qoder CN — C 级 · 交接 + Context Bridge</option>
+              <option selected>Claude Code — C 级 · 交接 + 启动命令</option>
+              <option>Cursor — C 级 · 交接文件</option>
+            </select>
+          </div>
+        </div>
+        <div class="banner banner-info">本向导只恢复会话。目标产品的 MCP 配置保持不变，可在“全局 MCP 配置”页另行迁移一次。</div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="wiz-pane" data-pane="4">
+        <h3 class="pane-title">写入预览 · 执行</h3>
+
+        <div class="ops">
+          <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>IDE Hub/capsules/（2 个）</code><div class="op-sub">标准 Capsule + handoff 入口</div></div></div>
+          <div class="op-row"><span class="op-badge b-apply">应用</span><div class="op-main"><code>working-tree.patch + untracked/</code><div class="op-sub">仅映射成功的工作区；冲突时保留 staging，不覆盖本地文件</div></div></div>
+        </div>
+
+        <div class="state-timeline" id="impTimeline"></div>
+
+        <div class="run-result" id="impResult" hidden>
+          <div class="result-card">
+            <div class="result-icon ok">✓</div>
+            <div>
+              <h4>导入完成 · 2 个会话进入「已导入」列表</h4>
+              <p class="muted">即使暂未安装对应目标 IDE，ZIP 内容也不会丢失；后续安装 adapter 后可继续恢复。</p>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="btn btn-primary" data-toast="已打开 Qoder CN（演示）">打开 Qoder CN</button>
+            <button class="btn btn-ghost" data-toast="已打开 Claude Code（演示）">打开 Claude Code</button>
+            <button class="btn btn-ghost" data-wiz-close>完成</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer class="wiz-foot">
+      <div class="wiz-foot-info">解压至临时 staging · 校验通过才写入 · 失败保留 staging</div>
+      <div class="wiz-foot-btns">
+        <button class="btn btn-ghost" data-wiz-close>取消</button>
+        <button class="btn btn-ghost" data-wiz-prev>上一步</button>
+        <button class="btn btn-primary" data-wiz-next>下一步</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- Wizard: Global MCP migration (3 steps)                          -->
+<!-- ============================================================= -->
+<div class="overlay" id="ovMcpMigration" data-wiz="mcp-global">
+  <div class="wizard">
+    <header class="wiz-head">
+      <div class="wiz-title">
+        <h2>迁移全局 MCP 配置</h2>
+        <span class="wiz-sub">Codex → Cursor · 独立配置任务 · 不关联任何会话</span>
+      </div>
+      <button class="icon-btn wiz-close" data-wiz-close>✕</button>
+    </header>
+
+    <div class="wiz-steps" data-steps></div>
+
+    <div class="wiz-body">
+      <div class="wiz-pane" data-pane="1">
+        <h3 class="pane-title">选择源产品和目标产品</h3>
+        <p class="pane-sub">读取源产品当前生效的 MCP 配置，整体迁移到一个或多个目标产品。完成一次后，后续迁移会话不会再重复处理 MCP。</p>
+        <div class="card">
+          <div class="card-title">来源</div>
+          <div class="src-chips">
+            <button class="src-chip selected"><span class="prod-tag codex">Codex</span><span class="sc-scope">~/.codex/config.toml · 3 servers</span></button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">目标</div>
+          <div class="target-checks">
+            <label class="tgt-chip on"><input type="checkbox" checked><span class="prod-tag cursor">Cursor</span></label>
+            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag qoder">Qoder CN</span></label>
+            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag claude">Claude Code</span></label>
+            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag zcode">ZCode</span></label>
+          </div>
+        </div>
+        <div class="banner banner-info">任务粒度是“源产品 → 目标产品”，不是“会话 → 目标产品”。</div>
+      </div>
+
+      <div class="wiz-pane" data-pane="2">
+        <h3 class="pane-title">选择配置并预览差异</h3>
+        <div class="mcp-wcard">
+          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">context7</span></label><span class="badge b-ok">新增</span><span class="badge b-muted">stdio</span></div>
+          <div class="mcpw-foot ok">Codex user scope → Cursor user scope · 字段兼容</div>
+        </div>
+        <div class="mcp-wcard">
+          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">nacos-dev</span></label><span class="badge b-ok">新增</span><span class="badge b-muted">stdio</span></div>
+          <div class="mcpw-foot ok">环境变量引用保持不变</div>
+        </div>
+        <div class="mcp-wcard conflict">
+          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">mysql-dev</span></label><span class="badge b-warn">同名冲突</span></div>
+          <div class="mcpw-strategy">
+            <span class="st-label">冲突策略</span>
+            <label class="radio-chip"><input type="radio" name="globalMysqlStrategy">跳过</label>
+            <label class="radio-chip selected"><input type="radio" name="globalMysqlStrategy" checked>重命名为 mysql-dev-2</label>
+            <label class="radio-chip"><input type="radio" name="globalMysqlStrategy">替换</label>
+          </div>
+        </div>
+        <div class="banner banner-info">本次只写 Cursor 的全局 MCP 配置，不创建、读取或修改任何会话。</div>
+      </div>
+
+      <div class="wiz-pane" data-pane="3">
+        <h3 class="pane-title">执行全局配置迁移</h3>
+        <div class="ops">
+          <div class="op-row"><span class="op-badge b-backup">备份</span><div class="op-main"><code>~/.cursor/mcp.json</code><div class="op-sub">写入前创建独立 MCP 配置备份</div></div></div>
+          <div class="op-row"><span class="op-badge b-write">写入</span><div class="op-main"><code>~/.cursor/mcp.json</code><div class="op-sub">新增 2 · 重命名 1 · 与会话数据无关</div></div></div>
+        </div>
+        <div class="state-timeline" id="mcpGlobalTimeline"></div>
+        <div class="run-result" id="mcpGlobalResult" hidden>
+          <div class="result-card">
+            <div class="result-icon ok">✓</div>
+            <div>
+              <h4>全局 MCP 配置迁移完成</h4>
+              <p class="muted">Codex → Cursor · 3 个 server · 此后迁移任意会话都不会重复写入。</p>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="btn btn-ghost" data-toast="已从备份恢复 Cursor MCP 配置（演示）">回滚配置</button>
+            <button class="btn btn-primary" data-wiz-close>完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="wiz-foot">
+      <div class="wiz-foot-info">全局配置任务 · 独立备份与回滚 · 不关联 Session ID</div>
+      <div class="wiz-foot-btns">
+        <button class="btn btn-ghost" data-wiz-close>取消</button>
+        <button class="btn btn-ghost" data-wiz-prev>上一步</button>
+        <button class="btn btn-primary" data-wiz-next>下一步</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>

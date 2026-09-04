@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ide-hub.local/schemas/session-migration-result-v1.schema.json",
+  "title": "IDE Hub Codex session migration result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "migrationId",
+    "status",
+    "sourceThreadId",
+    "targetSessionId",
+    "workspace",
+    "modelInvoked",
+    "mcpChanged",
+    "continuation",
+    "details"
+  ],
+  "properties": {
+    "migrationId": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["DRY_RUN", "COMPLETED"] },
+    "sourceThreadId": { "type": "string", "minLength": 1 },
+    "targetSessionId": { "type": ["string", "null"] },
+    "workspace": { "type": "string", "minLength": 1 },
+    "modelInvoked": { "const": false },
+    "mcpChanged": { "const": false },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "bundleId"],
+      "properties": {
+        "product": { "enum": ["qoder-international", "qoder-cn", "cursor"] },
+        "bundleId": {
+          "enum": [
+            "com.qoder.ide",
+            "com.aliyun.lingma.ide",
+            "com.todesktop.230313mzl4w4u92"
+          ]
+        }
+      }
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactsDir",
+        "sourceSnapshotSha256",
+        "seedContextSha256",
+        "seedContextBytes",
+        "projectionSha256",
+        "projectedTurnCount",
+        "projectedMessageCount",
+        "lossReport"
+      ],
+      "properties": {
+        "artifactsDir": { "type": "string", "minLength": 1 },
+        "sourceSnapshotSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "seedContextSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "seedContextBytes": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "projectionSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "projectedTurnCount": { "type": "integer", "minimum": 1 },
+        "projectedMessageCount": { "type": "integer", "minimum": 1 },
+        "lossReport": { "type": "object" }
+      }
+    }
+  }
+}
