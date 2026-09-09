@@ -1,0 +1,5 @@
+- insert:
+    - id: ide-hub-dsh-session-bridge
+      name: '@ide-hub/dsh-session-bridge'
+      config:
+        root: !!js dshHomePath('ide-hub-bridge')

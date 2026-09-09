@@ -30,7 +30,7 @@ const outputPaths = await packager({
   out: join(projectRoot, "release"),
   overwrite: true,
   prune: true,
-  asar: { unpackDir: "cursor-bridge" },
+  asar: { unpackDir: "{cursor-bridge,dsh-bridge}" },
   appBundleId: "com.idehub.desktop",
   appVersion: "0.1.0",
   electronVersion,

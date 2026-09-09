@@ -22,6 +22,10 @@ test("migration request accepts the implemented Codex target routes", () => {
     validateMigrationRequest({ ...valid, targetProduct: "cursor" }),
     { ...valid, targetProduct: "cursor" },
   );
+  assert.deepEqual(
+    validateMigrationRequest({ ...valid, targetProduct: "deepseek-harness" }),
+    { ...valid, targetProduct: "deepseek-harness" },
+  );
 });
 
 test("migration request rejects an unsupported target product", () => {
@@ -52,7 +56,7 @@ test("migration request rejects model and MCP fields", () => {
   }
 });
 
-test("migration schemas expose Cursor as a native target", async () => {
+test("migration schemas expose Cursor and DSH as native targets", async () => {
   const [requestSchema, resultSchema] = await Promise.all(
     [
       "../schemas/session-migration-request-v1.schema.json",
@@ -62,10 +66,21 @@ test("migration schemas expose Cursor as a native target", async () => {
     ),
   );
   assert.ok(requestSchema.properties.targetProduct.enum.includes("cursor"));
+  assert.ok(requestSchema.properties.targetProduct.enum.includes("deepseek-harness"));
   assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("cursor"));
+  assert.ok(
+    resultSchema.properties.continuation.properties.product.enum.includes(
+      "deepseek-harness",
+    ),
+  );
   assert.ok(
     resultSchema.properties.continuation.properties.bundleId.enum.includes(
       "com.todesktop.230313mzl4w4u92",
+    ),
+  );
+  assert.ok(
+    resultSchema.properties.continuation.properties.bundleId.enum.includes(
+      "@deepseek-ai/dsh",
     ),
   );
 });

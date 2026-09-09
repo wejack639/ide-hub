@@ -13,7 +13,7 @@
   ],
   "properties": {
     "sourceProduct": { "const": "codex" },
-    "targetProduct": { "enum": ["qoder-international", "qoder-cn", "cursor"] },
+    "targetProduct": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness"] },
     "sourceThreadId": { "type": "string", "minLength": 1 },
     "contextPolicy": { "const": "goal-recent-plan-v1" },
     "dryRun": { "type": "boolean" }

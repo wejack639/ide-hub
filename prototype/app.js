@@ -32,6 +32,11 @@ const MIGRATION_TARGETS = {
     stateKey: "cursor",
     name: "Cursor",
   },
+  "deepseek-harness": {
+    productId: "dsh",
+    stateKey: "dsh",
+    name: "DeepSeek Harness",
+  },
 };
 const MIGRATION_STEPS = ["源会话", "目标", "空闲检查", "投影预览", "损失报告", "写入计划", "执行"];
 const STUB_WIZARDS = {
@@ -47,6 +52,7 @@ const state = {
   qoder: null,
   qoderCn: null,
   cursor: null,
+  dsh: null,
   current: null,
   selected: new Set(),
   search: "",
@@ -73,6 +79,9 @@ function defaultMigrationTarget() {
   if (state.qoder?.installed) return "qoder-international";
   if (state.qoderCn?.installed) return "qoder-cn";
   if (state.cursor?.installed && state.cursor?.compatible) return "cursor";
+  if (state.dsh?.installed && state.dsh?.compatible && state.dsh?.bridgeCompatible) {
+    return "deepseek-harness";
+  }
   return null;
 }
 
@@ -171,6 +180,23 @@ function renderProducts() {
             ? state.cursor.compatibilityError
             : "未发现 Cursor",
         status: usable ? "ok" : "none",
+      };
+    }
+    if (id === "dsh") {
+      const usable = state.dsh?.installed
+        && state.dsh?.compatible
+        && state.dsh?.bridgeCompatible;
+      return {
+        id,
+        version: state.dsh?.installed ? state.dsh.version : "未安装",
+        note: usable
+          ? `SessionEvent v0 原生迁移已启用 · Bridge ${state.dsh.bridgeVersion}`
+          : state.dsh?.installed && state.dsh?.compatible
+            ? "已发现 DSH；需启用本地迁移桥"
+            : state.dsh?.installed
+              ? state.dsh.compatibilityError
+              : "未发现 DeepSeek Harness",
+        status: usable ? "ok" : state.dsh?.installed ? "warn" : "none",
       };
     }
     return { id, version: "会话扫描未接入", note: "未实现", status: "none" };
@@ -298,6 +324,15 @@ function renderDetail() {
   const canMigrateInternational = thread.migratable && state.qoder?.installed && !state.migrating;
   const canMigrateCn = thread.migratable && state.qoderCn?.installed && !state.migrating;
   const canMigrateCursor = thread.migratable && state.cursor?.installed && state.cursor?.compatible && !state.migrating;
+  const canMigrateDsh = thread.migratable
+    && state.dsh?.installed
+    && state.dsh?.compatible
+    && state.dsh?.bridgeCompatible
+    && !state.migrating;
+  const canPrepareDsh = state.dsh?.installed
+    && state.dsh?.compatible
+    && !state.dsh?.bridgeCompatible
+    && !state.migrating;
   const qoderInternationalStatus = state.qoder?.installed
     ? `Qoder 国际版 ${esc(state.qoder.version)} 已发现`
     : "未发现 Qoder 国际版，暂不能迁移";
@@ -309,6 +344,13 @@ function renderDetail() {
           ? `Cursor ${esc(state.cursor.version)} 版本指纹兼容，可执行原生迁移`
       : `Cursor ${esc(state.cursor.version)} 不兼容：${esc(state.cursor.compatibilityError)}`
     : "未发现 Cursor，暂不能迁移";
+  const dshStatus = state.dsh?.installed
+    ? state.dsh.compatible
+      ? state.dsh.bridgeCompatible
+        ? `DeepSeek Harness ${esc(state.dsh.version)} 与本地迁移桥已就绪`
+        : `DeepSeek Harness ${esc(state.dsh.version)} 已发现，需先启用本地迁移桥`
+      : `DeepSeek Harness ${esc(state.dsh.version)} 不兼容：${esc(state.dsh.compatibilityError)}`
+    : "未发现 DeepSeek Harness，暂不能迁移";
   const resultTarget = migrationTarget(state.lastResult?.continuation?.product);
   const result = state.lastResult?.sourceThreadId === thread.id ? `
     <div class="detail-sec">
@@ -346,6 +388,7 @@ function renderDetail() {
       <div class="muted-note">${qoderInternationalStatus}</div>
       <div class="muted-note">${qoderCnStatus}</div>
       <div class="muted-note">${cursorStatus}</div>
+      <div class="muted-note">${dshStatus}</div>
     </div>
     <div class="detail-sec">
       <div class="ds-label">迁移边界</div>
@@ -358,11 +401,16 @@ function renderDetail() {
       <button class="btn btn-primary" id="detailMigrateInternational" ${canMigrateInternational ? "" : "disabled"}>迁移到 Qoder 国际版…</button>
       <button class="btn btn-ghost" id="detailMigrateCn" ${canMigrateCn ? "" : "disabled"}>迁移到 Qoder CN…</button>
       <button class="btn btn-ghost" id="detailMigrateCursor" ${canMigrateCursor ? "" : "disabled"}>迁移到 Cursor…</button>
+      ${canPrepareDsh
+        ? '<button class="btn btn-ghost" id="detailPrepareDsh">启用 DSH 本地迁移桥…</button>'
+        : `<button class="btn btn-ghost" id="detailMigrateDsh" ${canMigrateDsh ? "" : "disabled"}>迁移到 DeepSeek Harness…</button>`}
       <button class="btn btn-ghost" id="detailExport">导出为 ZIP… <span class="badge b-warn">未实现</span></button>
     </div>`;
   $("#detailMigrateInternational").addEventListener("click", () => openMigration(thread, "qoder-international"));
   $("#detailMigrateCn").addEventListener("click", () => openMigration(thread, "qoder-cn"));
   $("#detailMigrateCursor").addEventListener("click", () => openMigration(thread, "cursor"));
+  $("#detailPrepareDsh")?.addEventListener("click", () => void prepareDshBridge());
+  $("#detailMigrateDsh")?.addEventListener("click", () => openMigration(thread, "deepseek-harness"));
   $("#detailExport").addEventListener("click", () => openStubWizard("ovExport"));
 }
 
@@ -404,7 +452,7 @@ function openMigration(thread = chosenThread(), requestedTarget = null) {
   }
   const targetProduct = requestedTarget ?? defaultMigrationTarget();
   if (targetProduct === null) {
-    toast("未发现可用的 Qoder 或 Cursor，请先安装目标 IDE", "warn");
+    toast("未发现可用的 Qoder、Cursor 或 DeepSeek Harness，请先安装并启用目标", "warn");
     return;
   }
   const target = migrationTarget(targetProduct);
@@ -432,6 +480,7 @@ function renderMigrationContext(thread) {
   const target = migrationTarget();
   const installation = targetInstallation();
   const isCursor = state.migrationTarget === "cursor";
+  const isDsh = state.migrationTarget === "deepseek-harness";
   $(".wiz-sub", overlay).textContent = `Codex → ${target.name} · 原生 User / Assistant 历史`;
   const status = statusOf(thread);
   const first = $('[data-pane="1"]', overlay);
@@ -459,7 +508,10 @@ function renderMigrationContext(thread) {
     const cardTarget = MIGRATION_TARGETS[card.dataset.target];
     const cardInstallation = cardTarget ? state[cardTarget.stateKey] : null;
     const implemented = cardTarget !== undefined;
-    const available = implemented && cardInstallation?.installed && cardInstallation?.compatible !== false;
+    const available = implemented
+      && cardInstallation?.installed
+      && cardInstallation?.compatible !== false
+      && (card.dataset.target !== "deepseek-harness" || cardInstallation?.bridgeCompatible);
     card.disabled = !available;
     card.classList.toggle("selected", card.dataset.target === state.migrationTarget);
     const flag = $(".tcard-flag", card) ?? document.createElement("span");
@@ -468,7 +520,11 @@ function renderMigrationContext(thread) {
       ? available
         ? `已发现 ${cardInstallation.version}`
         : cardInstallation?.installed
-          ? "版本不兼容"
+          ? card.dataset.target === "deepseek-harness"
+            && cardInstallation?.compatible
+            && !cardInstallation?.bridgeCompatible
+            ? "迁移桥未启用"
+            : "版本不兼容"
           : "未安装"
       : "未实现";
     if (!flag.parentElement) card.append(flag);
@@ -495,7 +551,9 @@ function renderMigrationContext(thread) {
   targetNotes[0].textContent = `目标路径不可修改：${target.name} 会话固定创建在源会话的同一工作区。`;
   targetNotes[1].textContent = isCursor
     ? `当前目标使用 ${installation.bundleId} · Cursor ${installation.version} · Chat JSON v1；本地桥只调用 IDE 内置导入，不安装 Agent CLI。`
-    : `当前目标使用 ${installation.bundleId} 的独立本地 runtime；迁移不调用模型，写入完整可见 User / Assistant 历史。`;
+    : isDsh
+      ? `当前目标使用 ${installation.runtimeId} ${installation.version} · Bridge ${installation.bridgeVersion}；在 DSH 进程内创建 SessionEvent v0 原生会话。`
+      : `当前目标使用 ${installation.bundleId} 的独立本地 runtime；迁移不调用模型，写入完整可见 User / Assistant 历史。`;
 
   const fourth = $('[data-pane="4"]', overlay);
   fourth.innerHTML = `
@@ -507,8 +565,8 @@ function renderMigrationContext(thread) {
       <div class="ho-grid">
         <div class="ho-sec"><div class="ho-label">源工作区</div><div class="ho-body sm mono">${esc(thread.cwd)}</div></div>
         <div class="ho-sec"><div class="ho-label">目标工作区</div><div class="ho-body sm mono">${esc(thread.cwd)}</div></div>
-        <div class="ho-sec"><div class="ho-label">写入方式</div><div class="ho-body sm">${isCursor ? "Cursor developer.bulkImportChats · Chat JSON v1" : "Qoder session/new + appendHistoryTurn"}</div></div>
-        <div class="ho-sec"><div class="ho-label">模型调用</div><div class="ho-body sm ok">${isCursor ? "禁止 startComposerPrompt 与 sendToAgent" : "禁止 session/prompt 与 chat/ask"}</div></div>
+        <div class="ho-sec"><div class="ho-label">写入方式</div><div class="ho-body sm">${isCursor ? "Cursor developer.bulkImportChats · Chat JSON v1" : isDsh ? "DSH ctx.agents.create + SessionEvent v0 seed + workspace.attachSession" : "Qoder session/new + appendHistoryTurn"}</div></div>
+        <div class="ho-sec"><div class="ho-label">模型调用</div><div class="ho-body sm ok">${isCursor ? "禁止 startComposerPrompt 与 sendToAgent" : isDsh ? "禁止 agent.followup / steer 与 session.prompt" : "禁止 session/prompt 与 chat/ask"}</div></div>
       </div>
     </div>
     <div class="banner banner-info">完整读取后，只把可见 User / Assistant 正文投影到 ${esc(target.name)} 原生历史；其他事件保留在本地 Capsule 审计文件中。</div>`;
@@ -617,7 +675,9 @@ function renderMigrationResult(result) {
   const target = migrationTarget(result.continuation.product);
   const continuationHelp = result.continuation.product === "cursor"
     ? `已按目标 Session ID 请求 Cursor 打开该原生会话；也可从 Chat History 中按“Codex · …”标题找到它。`
-    : `已请求 ${target.name} 打开同一工作区。请在聊天区右上角打开 Chat History，选择最新的“Codex · …”会话继续。`;
+    : result.continuation.product === "deepseek-harness"
+      ? `已打开 DSH Web。会话已挂载到同一工作区，请在会话列表按迁移标题或 Session ID ${result.targetSessionId} 找到并继续。`
+      : `已请求 ${target.name} 打开同一工作区。请在聊天区右上角打开 Chat History，选择最新的“Codex · …”会话继续。`;
   container.hidden = false;
   container.innerHTML = `
     <div class="result-card">
@@ -735,6 +795,27 @@ function normalizeError(error) {
   };
 }
 
+async function prepareDshBridge() {
+  if (state.migrating || state.scanning) return;
+  try {
+    if (!window.ideHub) throw new Error("Electron IPC 未加载；请从 IDE Hub 桌面应用打开");
+    const response = await window.ideHub.prepareDsh();
+    if (!response.ok) throw response.error;
+    state.dsh = response.data;
+    renderProducts();
+    renderDetail();
+    toast(
+      response.data.profileRestartRequired
+        ? "DSH 本地迁移桥已启用；若 DSH Web 正在运行，请关闭后重新迁移"
+        : "DSH 本地迁移桥已就绪",
+      "ok",
+    );
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    toast(`启用 DSH 迁移桥失败：${error.message}`, "warn");
+  }
+}
+
 async function scan() {
   if (state.scanning || state.migrating) return;
   state.scanning = true;
@@ -752,6 +833,7 @@ async function scan() {
     state.qoder = response.data.qoder;
     state.qoderCn = response.data.qoderCn;
     state.cursor = response.data.cursor;
+    state.dsh = response.data.dsh;
     const stillExists = state.threads.some((thread) => thread.id === state.current);
     if (!stillExists) state.current = state.threads[0]?.id ?? null;
     state.selected = new Set([...state.selected].filter((id) => state.threads.some((thread) => thread.id === id)));
@@ -762,6 +844,7 @@ async function scan() {
     state.qoder = null;
     state.qoderCn = null;
     state.cursor = null;
+    state.dsh = null;
     state.current = null;
     toast(`扫描失败：${error.message}`, "warn");
   } finally {

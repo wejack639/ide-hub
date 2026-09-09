@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld(
   "ideHub",
   Object.freeze({
     scan: () => ipcRenderer.invoke("ide-hub:scan"),
+    prepareDsh: () => ipcRenderer.invoke("ide-hub:prepare-dsh"),
     migrate: (sourceThreadId, targetProduct) =>
       ipcRenderer.invoke(
         "ide-hub:migrate",

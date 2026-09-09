@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, session } = require("electron");
-const { realpath, stat } = require("node:fs/promises");
+const { mkdir, realpath, stat } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -42,12 +42,13 @@ function handle(channel, operation) {
 }
 
 handle("ide-hub:scan", async () => {
-  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery] =
+  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery] =
     await Promise.all([
       coreModule("codex/app-server-client.js"),
       coreModule("codex/reader.js"),
       coreModule("qoder/discovery.js"),
       coreModule("cursor/discovery.js"),
+      coreModule("dsh/discovery.js"),
     ]);
   const codex = new CodexAppServerClient();
   let threads;
@@ -102,10 +103,40 @@ handle("ide-hub:scan", async () => {
       };
     }
   }
-  const [qoder, qoderCn, cursor] = await Promise.all([
+  async function scanDsh() {
+    try {
+      const installation = await dshDiscovery.inspectDsh();
+      return {
+        installed: true,
+        compatible: installation.compatible,
+        compatibilityError: installation.compatibilityError,
+        version: installation.version,
+        runtimeId: installation.runtimeId,
+        executablePath: installation.executablePath,
+        bridgeInstalled: installation.bridgeInstalled,
+        bridgeVersion: installation.bridgeVersion,
+        bridgeCompatible: installation.bridgeCompatible,
+      };
+    } catch (error) {
+      return {
+        installed: false,
+        compatible: false,
+        compatibilityError: error instanceof Error ? error.message : String(error),
+        version: null,
+        runtimeId: "@deepseek-ai/dsh",
+        executablePath: null,
+        bridgeInstalled: false,
+        bridgeVersion: null,
+        bridgeCompatible: false,
+        error: serializeError(error),
+      };
+    }
+  }
+  const [qoder, qoderCn, cursor, dsh] = await Promise.all([
     scanQoder(qoderDiscovery.discoverQoderInternational, "com.qoder.ide"),
     scanQoder(qoderDiscovery.discoverQoderCn, "com.aliyun.lingma.ide"),
     scanCursor(),
+    scanDsh(),
   ]);
 
   return {
@@ -113,6 +144,7 @@ handle("ide-hub:scan", async () => {
     qoder,
     qoderCn,
     cursor,
+    dsh,
     threads: threads.map((thread) => ({
       id: thread.id,
       name: thread.name,
@@ -130,6 +162,26 @@ handle("ide-hub:scan", async () => {
         thread.path !== null &&
         thread.status?.type !== "active",
     })),
+  };
+});
+
+handle("ide-hub:prepare-dsh", async () => {
+  const { inspectDsh, ensureDshBridge } = await coreModule("dsh/discovery.js");
+  const installation = await inspectDsh();
+  const bridge = await ensureDshBridge(installation);
+  const verified = await inspectDsh();
+  return {
+    installed: true,
+    compatible: verified.compatible,
+    compatibilityError: verified.compatibilityError,
+    version: verified.version,
+    runtimeId: verified.runtimeId,
+    executablePath: verified.executablePath,
+    bridgeInstalled: verified.bridgeInstalled,
+    bridgeVersion: verified.bridgeVersion,
+    bridgeCompatible: verified.bridgeCompatible,
+    installedNow: bridge.installedNow,
+    profileRestartRequired: bridge.profileRestartRequired,
   };
 });
 
@@ -188,11 +240,23 @@ handle("ide-hub:open-target", async (workspace, targetProduct, targetSessionId) 
     }
     return { workspace: canonicalWorkspace, targetProduct, targetSessionId };
   }
+  if (targetProduct === "deepseek-harness") {
+    const [{ discoverDsh }, { ensureDshRuntime, openDshWeb }] = await Promise.all([
+      coreModule("dsh/discovery.js"),
+      coreModule("dsh/bridge.js"),
+    ]);
+    const installation = await discoverDsh();
+    const operationDirectory = path.join(app.getPath("userData"), "open-requests");
+    await mkdir(operationDirectory, { recursive: true });
+    await ensureDshRuntime(installation, canonicalWorkspace, operationDirectory);
+    await openDshWeb();
+    return { workspace: canonicalWorkspace, targetProduct, targetSessionId };
+  }
   const { discoverQoder, openQoderWorkspace } = await coreModule(
     "qoder/discovery.js",
   );
   if (targetProduct !== "qoder-international" && targetProduct !== "qoder-cn") {
-    throw new Error("targetProduct must be qoder-international, qoder-cn, or cursor");
+    throw new Error("targetProduct must be qoder-international, qoder-cn, cursor, or deepseek-harness");
   }
   const installation = await discoverQoder(targetProduct);
   openQoderWorkspace(installation, canonicalWorkspace);

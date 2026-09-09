@@ -21,10 +21,14 @@ test("desktop shell uses the prototype renderer and exposes a narrow IPC bridge"
   );
   assert.match(renderer, /"qoder-cn"/u);
   assert.match(renderer, /"cursor"/u);
+  assert.match(renderer, /"deepseek-harness"/u);
   assert.match(main, /discoverQoderCn/u);
   assert.match(main, /inspectCursor/u);
+  assert.match(main, /inspectDsh/u);
+  assert.match(main, /ensureDshBridge/u);
   assert.match(main, /cursor\/bridge\.js/u);
   assert.match(main, /com\.aliyun\.lingma\.ide/u);
+  assert.match(main, /@deepseek-ai\/dsh/u);
   assert.match(renderer, /MCP 扫描尚未实现/u);
   assert.match(renderer, /ZIP 导出/u);
   assert.match(renderer, /ZIP 导入/u);
@@ -34,6 +38,7 @@ test("desktop shell uses the prototype renderer and exposes a narrow IPC bridge"
   assert.match(main, /backgroundThrottling:\s*false/u);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/u);
   assert.match(preload, /scan:/u);
+  assert.match(preload, /prepareDsh:/u);
   assert.match(preload, /migrate:/u);
   assert.match(preload, /openTarget:/u);
   assert.doesNotMatch(preload, /ipcRenderer\.send\s*[,}]/u);

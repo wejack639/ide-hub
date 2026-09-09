@@ -27,11 +27,12 @@ export function validateMigrationRequest(value: unknown): MigrationRequest {
   if (
     request.targetProduct !== "qoder-international" &&
     request.targetProduct !== "qoder-cn" &&
-    request.targetProduct !== "cursor"
+    request.targetProduct !== "cursor" &&
+    request.targetProduct !== "deepseek-harness"
   ) {
     throw new MigrationError(
       "INVALID_REQUEST",
-      "targetProduct must be qoder-international, qoder-cn, or cursor",
+      "targetProduct must be qoder-international, qoder-cn, cursor, or deepseek-harness",
     );
   }
   if (typeof request.sourceThreadId !== "string" || request.sourceThreadId.length === 0) {

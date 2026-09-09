@@ -1,9 +1,9 @@
 # IDE Hub 任务进度总控
 
 > 文档角色：项目唯一进度真相源（Single Source of Truth）<br>
-> 最后更新：2026-09-04<br>
+> 最后更新：2026-09-09<br>
 > 当前阶段：Phase 0 多目标会话 Gate 收尾 + 桌面 MVP 适配扩展<br>
-> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor 三个目标。Cursor `3.18.9` 的 `0 system prompt roots` 与 `BlobID must be 32 bytes` 两个缺陷均已修复：field 1 全部写入 32 字节内容摘要，首个摘要解析为 `role=system,id=system`；新会话已真实续聊并正确承接迁移历史。精确失败回滚仍未通过 Gate。迁移本身不调用模型、不修改 MCP，也不安装或登录 Cursor Agent CLI。
+> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness 四个目标。DSH `0.1.0-rc.6` 已通过版本与包指纹 Gate，由 Web profile 中一次安装的 bridge 在 DSH 进程内创建原生 SessionEvent 会话；真实会话已完成同工作区回读、实际下一轮和续聊后幂等复跑。迁移本身不调用模型、不修改 MCP；连续性 Gate 单独使用 DSH 已有模型配置。
 
 ## 1. 使用规则
 
@@ -37,9 +37,10 @@
 | 首条迁移 Spec | `DONE` | Codex → Qoder 国际版；源/目标强制属于同一 canonical workspace |
 | Qoder CN 迁移 Spec | `DONE` | 与国际版共用轮次投影，独立 bundle、runtime、socket 和 client identity |
 | Cursor 迁移 Spec | `DONE` | Codex → Cursor `3.18.9`；版本/Workbench 指纹锁定，A → canonical(A) |
+| DeepSeek Harness 迁移 Spec | `DONE` | Codex → DSH `0.1.0-rc.6`；版本/包指纹/bridge 协议锁定，A → canonical(A) |
 | Phase 0 本地验证 | `IN_PROGRESS` | TypeScript 测试入口、请求/结果 Schema、Codex reader、原生轮次投影、journal 和测试已落地；CLI 仅为开发测试入口，不是用户入口 |
-| 本地桌面应用 | `DONE` | Electron 44.1.1 本地 `.app`；无 HTTP/localhost；真实扫描 185 个 Codex 会话并从界面完成迁移 |
-| 真实 IDE 迁移 | `IN_PROGRESS` | 国际版实际下一轮通过；CN 下一轮被账号状态 `112` 阻断；Cursor 原生历史、同工作区、打开、幂等和实际下一轮通过，精确回滚待完成 |
+| 本地桌面应用 | `DONE` | Electron 44.1.1 本地 `.app`；IDE Hub 自身无 HTTP 服务；正式原型层可扫描 DSH 并启用一次性本地 bridge |
+| 真实 IDE 迁移 | `IN_PROGRESS` | 国际版实际下一轮通过；CN 下一轮被账号状态 `112` 阻断；Cursor 与 DSH 原生历史、同工作区、打开、幂等和实际下一轮通过，Cursor 精确回滚待完成 |
 | 跨电脑 ZIP 恢复 | `TODO` | 尚未生成或导入真实 Bundle |
 | 全局 MCP 配置迁移 | `TODO` | 尚未真实写入或回滚任何目标产品配置 |
 
@@ -49,6 +50,7 @@
 - 已有：[SESSION-MIG-001：Codex → Qoder 国际版](./specs/session-migration-001-codex-to-qoder-international.md)。
 - 已有：[SESSION-MIG-002：Codex → Qoder CN](./specs/session-migration-002-codex-to-qoder-cn.md)。
 - 已有：[SESSION-MIG-003：Codex → Cursor](./specs/session-migration-003-codex-to-cursor.md)。
+- 已有：[SESSION-MIG-004：Codex → DeepSeek Harness](./specs/session-migration-004-codex-to-deepseek-harness.md)。
 - `prototype/` 已从参考原型升级为正式 Electron 渲染层；`desktop/` 下旧的简化 HTML/CSS/JS 已删除。
 - 已有 TypeScript 核心、`schemas/`、`src/`、`test/` 和 `desktop/`；已打包 `release/IDE Hub-darwin-arm64/IDE Hub.app`。
 - 桌面壳直接调用 TypeScript 迁移核心，不启动 Web 服务；Tauri/Rust 方案已由当前 Electron 实现取代。
@@ -60,19 +62,19 @@
 | 里程碑 | 状态 | Gate 结果 | 依赖 |
 |---|---|---|---|
 | M0：产品边界与原型基线 | `DONE` | 会话、会话 ZIP、MCP 已拆分 | 无 |
-| M1：Phase 0 本地可行性 Gate | `IN_PROGRESS` | Qoder 国际版和 Cursor 连续性通过；断网与 Cursor 精确回滚尚未结束 | M0 |
+| M1：Phase 0 本地可行性 Gate | `IN_PROGRESS` | Qoder 国际版、Cursor 和 DSH 连续性通过；断网与 Cursor 精确回滚尚未结束 | M0 |
 | M2：Phase 1 桌面 MVP | `IN_PROGRESS` | prototype 布局已正式落地；真实会话列表与 7 步迁移向导完成；ZIP、MCP、任务中心保留入口并标记未实现 | M1 |
-| M3：Phase 2 产品矩阵扩展 | `WAITING` | 尚未进入 | M2 |
-| M4：Phase 3 实验原生投影 | `WAITING` | 尚未进入 | M2 |
+| M3：Phase 2 产品矩阵扩展 | `IN_PROGRESS` | DSH 目标发现与正式桌面入口完成；其他 source/target 待实施 | M2 |
+| M4：Phase 3 实验原生投影 | `IN_PROGRESS` | DSH rc.6 原生 seed plugin、版本锁和连续性 Gate 已通过；Pi 待实施 | M2 |
 | M5：Phase 4 受控同步 | `WAITING` | 可选，尚未进入 | M2/M4 |
 
 ### 2.3 当前焦点
 
-当前并行推进 M1 多目标 Gate 收尾和 M2 已授权的桌面适配：
+当前并行推进 M1 多目标 Gate 收尾、M2 桌面适配和已授权的 DSH 原生目标：
 
-> 按 SESSION-MIG-003 收口 Codex → Cursor；源会话 cwd=A 时，目标 Cursor 会话必须为同一个 canonical(A)，且迁移阶段不调用模型、不触碰 MCP、不使用 Cursor Agent CLI。
+> SESSION-MIG-004 已完成 Codex → DSH 最短闭环；源会话 cwd=A 时，目标 SessionHeader.cwd 与 DSH Workspace 均为 canonical(A)，迁移阶段不调用模型、不触碰 MCP，续聊 Gate 与迁移操作分开记录。
 
-Cursor native Chat JSON v1 投影、32 字节 BlobID、leading system-prompt root、原生回读、协议级幂等和真实下一轮 Gate 已通过。可续聊会话为 `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96`；旧会话 `fb042951-6cd0-456f-9a36-4ee9cefe66e5` 与 `b54ba6c6-e51c-4d4b-84cd-9c71aaf3e314` 仅用于缺陷留证，不再续聊或复用。下一步完成精确回滚和断网 Gate，再推进会话 ZIP 与独立 MCP Gate。
+DSH 最终会话为 `session-idehub-116368030a2fa5a2a44915824725c5c1`：21 个迁移 turn、42 条源可见消息、126 个 seed 事件；新增第 22 轮正确回答 `Extra High=xhigh`、`Max=max`，续聊后复跑仍复用同一 Session 且保留 381 个事件。开发期三个旧协议会话已通过 DSH 官方归档接口隐藏。下一步继续完成 Cursor 精确回滚、断网 Gate、会话 ZIP 与独立 MCP Gate。
 
 ## 3. 不可破坏的产品约束
 
@@ -221,13 +223,13 @@ P0-02 细分验收：
 |---|---|---|---|---|
 | P1-01 | Electron 桌面壳与本地 IPC | `DONE` | 用户提前授权 | `file://` 本地页面；无 Web/localhost；隔离 preload 调用 TypeScript core；已打包启动 |
 | P1-02 | 产品 Discovery 与会话列表 | `DONE` | P1-01 | 实际展示 Codex 185 个会话、Qoder 国际版 / CN 1.27.1、workspace 和会话详情 |
-| P1-03 | 会话迁移操作流 | `DONE` | P1-02/P0-08 | prototype 7 步向导支持 Qoder 国际版、Qoder CN 和 Cursor，并接入真实迁移 IPC；Cursor 首次安装桥后若已运行需明确提示重载一次 |
+| P1-03 | 会话迁移操作流 | `DONE` | P1-02/P0-08 | prototype 7 步向导支持 Qoder 国际版、Qoder CN、Cursor 和 DSH，并接入真实迁移 IPC；目标 bridge 未准备时先显示一次性启用操作 |
 | P1-04 | 会话 ZIP 导入/导出向导 | `WAITING` | P1-01/P0-07 | 单/批量会话、路径映射、workspace delta |
 | P1-05 | 全局 MCP 配置页 | `WAITING` | P1-01/P0-11 | 产品级整套迁移；独立任务/备份/回滚 |
 | P1-06 | MCP 独立配置包 UI | `WAITING` | P1-05 | 导入/导出一次，不包含会话 |
 | P1-07 | Context Bridge 全局安装 | `WAITING` | P1-01/P0-08 | 每个目标产品配置一次；工具接收 `migrationId` |
 | P1-08 | Claude Code/Cursor source Adapter | `WAITING` | P0-04 | 真实只读 fixture 与契约测试 |
-| P1-09 | Codex/Qoder/Claude/Cursor target Adapter | `IN_PROGRESS` | P0-08 | Qoder 国际版/CN与 Cursor target 已接入；Claude 及其余能力降级待实现 |
+| P1-09 | Codex/Qoder/Claude/Cursor/DSH target Adapter | `IN_PROGRESS` | P0-08 | Qoder 国际版/CN、Cursor 与 DSH target 已接入；Claude 及其余能力降级待实现 |
 | P1-10 | 任务中心 | `WAITING` | P1-03/P1-05 | 会话任务和 MCP 任务可区分、可独立回滚 |
 | P1-11 | macOS MVP 打包 | `IN_PROGRESS` | P1-01～P1-10 | arm64 `.app` 已本机打包并启动；签名、安装包、离线和两台电脑验收待完成 |
 
@@ -247,7 +249,9 @@ MVP Gate：
 | P2-01 | CodeBuddy source/target Adapter | `WAITING` |
 | P2-02 | ZCode source/C 级 target/MCP Adapter | `WAITING` |
 | P2-03 | Pi source/target SDK Adapter | `WAITING` |
-| P2-04 | DeepSeek Harness source/C 级 target/Cordis MCP renderer | `WAITING` |
+| P2-04S | DeepSeek Harness source Adapter | `WAITING` |
+| P2-04T | DeepSeek Harness target discovery 与原生会话迁移 | `DONE` |
+| P2-04M | DeepSeek Harness Cordis MCP renderer（独立全局 MCP 任务） | `WAITING` |
 | P2-05 | Windows/Linux 路径、进程和配置发现 | `WAITING` |
 
 ### Phase 3：实验原生投影
@@ -255,7 +259,7 @@ MVP Gate：
 | ID | 范围 | 状态 |
 |---|---|---|
 | P3-01 | Pi 规范化事件投影 | `WAITING` |
-| P3-02 | DSH seed plugin 与版本锁定 | `WAITING` |
+| P3-02 | DSH seed plugin 与版本锁定 | `DONE` |
 | P3-03 | lineage 多次分叉与任意迁移点继续 | `WAITING` |
 
 ### Phase 4：受控同步（可选）
@@ -266,9 +270,9 @@ MVP Gate：
 | P4-02 | 两端继续后的分支管理 | `WAITING` |
 | P4-03 | 冲突检测与人工选择 | `WAITING` |
 
-## 9. 当前执行批次 B0/B1
+## 9. 当前执行批次 B0/B1/B2
 
-目标：B0 按 SESSION-MIG-001/002 完成 Qoder 路径；B1 按 SESSION-MIG-003 完成 Cursor `3.18.9` 原生迁移最短闭环。
+目标：B0 按 SESSION-MIG-001/002 完成 Qoder 路径；B1 按 SESSION-MIG-003 完成 Cursor `3.18.9` 原生迁移；B2 按 SESSION-MIG-004 完成 DSH `0.1.0-rc.6` 原生迁移最短闭环。
 
 | 顺序 | 任务 | 状态 | 当前结果 |
 |---|---|---|---|
@@ -285,6 +289,8 @@ MVP Gate：
 | 11 | P0-08B | `BLOCKED` | Qoder CN 下一轮已分别使用 `gmodel`、`qfmodel` 真实发起，两次均返回服务端 `112` 套餐限制；失败记录已精确回滚，待账号权限恢复后重跑 |
 | 12 | SESSION-MIG-003 / P0-06C | `DONE` | Cursor 版本/Workbench/命令锁、Chat JSON v1 内容寻址 blob、leading system-prompt root、本地扩展桥、原生导入、同工作区回读和精确打开完成 |
 | 13 | P0-08C | `IN_PROGRESS` | 旧 session `fb042951-6cd0-456f-9a36-4ee9cefe66e5`（0 system roots）与 `b54ba6c6-e51c-4d4b-84cd-9c71aaf3e314`（378-byte BlobID）禁止复用；新 session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96` 实际下一轮成功；仅精确回滚未完成 |
+| 14 | SESSION-MIG-004 / P2-04T / P3-02 | `DONE` | DSH rc.6 精确版本/包指纹、Web profile bridge 0.3.0、SessionEvent v0 seed、原生持久化、Workspace 挂载、同工作区回读和桌面入口完成 |
+| 15 | P0-08D | `DONE` | migration `3f017f8c-e471-48a9-ab00-d1ea945efa4c` 创建目标 Session；真实第 22 轮正确承接历史；复跑 migration `6b46b3f0-c0de-436c-b19c-33ddc0c6018b` 复用同一 Session 并保留 381 个事件 |
 
 首个真实样本：
 
@@ -293,20 +299,21 @@ MVP Gate：
 | 主 smoke case | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | 桌面 UI 迁移、原生历史、实际下一轮和 IDE 显示均通过；目标 session `06e96f4a-7df5-4175-a39c-8284a2fd09e2` |
 | Qoder CN smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | 原生历史、同工作区与 Chat History 列表可见通过；目标 session `c2078118-3586-4e37-9b1e-db3d11607bc6`；实际下一轮被当前账号状态 `112` 阻断 |
 | Cursor smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | Cursor `3.18.9` 原生历史、32-byte BlobID、leading system root、同工作区、原生回读、打开和实际下一轮通过；目标 session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96` |
+| DSH smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a079cc-0137-78a2-b44c-8246d39f68fd` | paginated | DSH `0.1.0-rc.6` 原生 SessionEvent 历史、同 Workspace、原生回读、真实下一轮和续聊后幂等复跑通过；目标 session `session-idehub-116368030a2fa5a2a44915824725c5c1` |
 | 兼容回归 | `/Users/domino/develop/IdeaProjects/temp` | `019ffe64-6259-7cc3-b567-3ac6425f7d6f` | legacy | reader 单测通过；未作为首个目标写入样本 |
 
-B0/B1 明确不做：
+B0/B1/B2 明确不做：
 
 - 不迁移或写入任何 MCP 配置。
 - 不实现 ZIP 跨电脑导入导出。
 - 不实现 Context Bridge。
-- 不接入 Qoder、Cursor 之外的其他目标产品。
+- 不接入 Qoder、Cursor、DSH 之外的其他目标产品。
 
 ## 10. 阻塞项与待决策
 
 ### 10.1 当前阻塞项
 
-Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外部阻塞，但精确失败回滚受当前版本缺少公开 delete-by-id 原生命令限制，仍作为未通过 Gate 管理。
+Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外部阻塞，但精确失败回滚受当前版本缺少公开 delete-by-id 原生命令限制，仍作为未通过 Gate 管理。DSH rc.6 目标路径无当前阻塞；其他 DSH 版本继续由版本 Gate 禁止写入。
 
 ### 10.2 待决策
 
@@ -328,6 +335,7 @@ Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外
 | MCP 重复迁移覆盖目标 | 任务携带 Session ID 或无幂等 diff | P0-10/P0-11 | `OPEN` |
 | 目标配置损坏 | round-trip 或回滚失败 | P0-10 | `OPEN` |
 | Cursor 导入后验证失败无法精确删除 | 无公开 delete-by-id 原生命令 | P0-08C | `OPEN`：不直写数据库；继续研究原生删除入口 |
+| DSH Session v0 随版本变化 | 版本或核心包指纹不一致 | P2-04T/P3-02 | `CLOSED`：仅允许 rc.6 精确指纹；未知版本创建前失败 |
 
 ## 12. 进度更新模板
 
@@ -378,3 +386,4 @@ Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外
 | 2026-09-03 | Codex → Cursor `3.18.9` 原生迁移落地 | 版本/Workbench/命令精确锁定；隔离用户目录原生导入和 blob 回读通过；真实 migration `72addebb-2d3f-4708-9678-44e7105b31d8` → session `fb042951-6cd0-456f-9a36-4ee9cefe66e5`，同一 `temp` 工作区、1 轮 2 消息；幂等复跑会话数 `5 → 5`；真实下一轮和精确回滚保持未完成；33 项测试通过 |
 | 2026-09-04 | Cursor 第一次 root 修复尝试失败 | session `b54ba6c6-e51c-4d4b-84cd-9c71aaf3e314` 虽能显示且回读为 1 个 system root，但错误地把 378 字节内联 JSON 写入 BlobID 字段；真实下一轮报 `BlobID must be 32 bytes, got 378`，该会话永久禁止复用 |
 | 2026-09-04 | Cursor 32-byte BlobID 与连续性 Gate 通过 | 协议升级为 `cursor-chat-json-v1-blob-roots-v3`：field 1 仅写 SHA-256 digest，第一个 blob 是 `role=system,id=system`；migration `09cc222e-ffd3-469c-9573-b594b526608e` → session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96`；实际下一轮 request `1dc3264d-af2d-4219-bd8b-be053f43c49a` 成功，回答 hash `158e6b32624ded028ad1b1be61586ff7e1b629e554bd932c0f4c1cb53816e87a`，第 2 turn 已持久化；续聊后复跑 migration `99fac385-c652-430e-89c9-5b4bd0a90bca` 仍复用同一 session；36 项测试、检查、构建和桌面打包通过；精确回滚仍待完成 |
+| 2026-09-09 | Codex → DeepSeek Harness rc.6 原生迁移与连续性 Gate 通过 | bridge 0.3.0 在 DSH 进程内创建 SessionEvent v0 seed 并挂载同一 Workspace；migration `3f017f8c-e471-48a9-ab00-d1ea945efa4c` → session `session-idehub-116368030a2fa5a2a44915824725c5c1`；实际第 22 轮正确回答旧历史中的 `xhigh/max` 映射，续聊后 migration `6b46b3f0-c0de-436c-b19c-33ddc0c6018b` 复用同一 Session 且事件数保持 381；迁移未调用模型或修改 MCP |

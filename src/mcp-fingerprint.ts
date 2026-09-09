@@ -22,6 +22,8 @@ export async function computeMcpFingerprint(
   const targetMcp =
     targetProduct === "cursor"
       ? await readEffectiveCursorMcp(workspace)
+      : targetProduct === "deepseek-harness"
+        ? await readEffectiveDshMcp()
       : await readEffectiveQoderMcp(workspace);
   const codexSha256 = sha256Text(stableJson(codexMcp));
   const targetSha256 = sha256Text(stableJson(targetMcp));
@@ -33,6 +35,21 @@ export async function computeMcpFingerprint(
       stableJson({ codexSha256, targetProduct, targetSha256 }),
     ),
   };
+}
+
+async function readEffectiveDshMcp(): Promise<Record<string, unknown>> {
+  const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
+  const candidates = [
+    join(dshHome, "settings.yaml"),
+    join(dshHome, "profiles", "web", "cordis.patch.yml"),
+    join(dshHome, "profiles", "web", "package.json"),
+  ];
+  const files: Record<string, string> = {};
+  for (const path of candidates) {
+    const content = await readTextIfExists(path);
+    if (content !== null) files[path] = sha256Text(content);
+  }
+  return files;
 }
 
 async function readEffectiveQoderMcp(workspace: string): Promise<Record<string, unknown>> {

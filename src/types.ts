@@ -7,9 +7,17 @@ export type JsonValue =
 export type QoderTargetProduct = "qoder-international" | "qoder-cn";
 export type QoderBundleId = "com.qoder.ide" | "com.aliyun.lingma.ide";
 export type CursorTargetProduct = "cursor";
-export type MigrationTargetProduct = QoderTargetProduct | CursorTargetProduct;
+export type DshTargetProduct = "deepseek-harness";
+export type MigrationTargetProduct =
+  | QoderTargetProduct
+  | CursorTargetProduct
+  | DshTargetProduct;
 export type CursorBundleId = "com.todesktop.230313mzl4w4u92";
-export type MigrationTargetBundleId = QoderBundleId | CursorBundleId;
+export type DshRuntimeId = "@deepseek-ai/dsh";
+export type MigrationTargetBundleId =
+  | QoderBundleId
+  | CursorBundleId
+  | DshRuntimeId;
 
 export type MigrationRequest = {
   sourceProduct: "codex";
@@ -249,4 +257,41 @@ export type CursorVerification = {
   historyVisible: true;
   systemPromptRootCount: number;
   rootHistoryValid: true;
+};
+
+export type DshCoreFingerprints = {
+  cli: string;
+  session: string;
+  agent: string;
+  persistence: string;
+  workspace: string;
+};
+
+export type DshInstallation = {
+  targetProduct: "deepseek-harness";
+  runtimeId: DshRuntimeId;
+  executablePath: string;
+  packageRoot: string;
+  version: string;
+  compatible: boolean;
+  compatibilityError: string | null;
+  fingerprints: DshCoreFingerprints;
+  dshHome: string;
+  webProfileRoot: string;
+  bridgeInstalled: boolean;
+  bridgeVersion: string | null;
+  bridgeCompatible: boolean;
+};
+
+export type DshVerification = {
+  sessionId: string;
+  workspace: string;
+  workspaceId: string;
+  agentPreset: string;
+  seedLength: number;
+  eventCount: number;
+  projectedTurnCount: number;
+  projectedMessageCount: number;
+  historyVisible: true;
+  reused: boolean;
 };

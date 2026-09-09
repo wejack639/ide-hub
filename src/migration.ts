@@ -30,6 +30,24 @@ import {
   waitForCursorWorkspaceId,
   waitForNewCursorComposer,
 } from "./cursor/storage.js";
+import {
+  ensureDshRuntime,
+  invokeDshBridge,
+  openDshWeb,
+  type DshBridgeInspection,
+} from "./dsh/bridge.js";
+import {
+  DSH_BRIDGE_VERSION,
+  discoverDsh,
+  ensureDshBridge,
+  inspectDsh,
+} from "./dsh/discovery.js";
+import {
+  dshMigrationKey,
+  dshTargetSessionId,
+} from "./dsh/idempotency.js";
+import { buildDshSessionSeed } from "./dsh/protocol.js";
+import { verifyDshInspection } from "./dsh/verify.js";
 import { MigrationError, asMigrationError } from "./errors.js";
 import { computeMcpFingerprint } from "./mcp-fingerprint.js";
 import { discoverQoder, openQoderWorkspace } from "./qoder/discovery.js";
@@ -136,6 +154,25 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
         workspace: workspace.workspaceCanonical,
         threadName: read.thread.name,
         threadPreview: read.thread.preview,
+        seed,
+        projection,
+        projectionSha256,
+      });
+    }
+
+    if (request.targetProduct === "deepseek-harness") {
+      return await runDshTarget({
+        request,
+        migrationId,
+        artifacts,
+        codex,
+        metadataPath: metadata.path,
+        sourceFingerprint: sourceAfterRead,
+        sourceSnapshotSha256,
+        workspace: workspace.workspaceCanonical,
+        threadName: read.thread.name,
+        threadPreview: read.thread.preview,
+        threadCreatedAt: read.thread.createdAt,
         seed,
         projection,
         projectionSha256,
@@ -302,6 +339,193 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
   } finally {
     await codex.close();
   }
+}
+
+async function runDshTarget(input: {
+  request: MigrationRequest;
+  migrationId: string;
+  artifacts: MigrationArtifacts;
+  codex: CodexAppServerClient;
+  metadataPath: string;
+  sourceFingerprint: FileFingerprint;
+  sourceSnapshotSha256: string;
+  workspace: string;
+  threadName: string | null;
+  threadPreview: string;
+  threadCreatedAt: number;
+  seed: ReturnType<typeof buildSeedContext>;
+  projection: ReturnType<typeof projectConversationToQoder>;
+  projectionSha256: string;
+}): Promise<MigrationResult> {
+  let installation = await inspectDsh();
+  if (!installation.compatible) {
+    throw new MigrationError(
+      "DSH_VERSION_UNSUPPORTED",
+      installation.compatibilityError ?? "DeepSeek Harness is unsupported",
+      { version: installation.version, fingerprints: installation.fingerprints },
+    );
+  }
+  const dshSeed = buildDshSessionSeed(input.projection, {
+    sourceIdentitySha256: input.sourceFingerprint.sha256,
+    baseTime: sourceEpochMilliseconds(input.threadCreatedAt),
+  });
+  await input.artifacts.writeJson("dsh-session-seed.json", dshSeed);
+  const key = dshMigrationKey({
+    sourceThreadId: input.request.sourceThreadId,
+    sourceFileSha256: input.sourceFingerprint.sha256,
+    workspace: input.workspace,
+    dshVersion: installation.version,
+  });
+  const targetSessionId = dshTargetSessionId(key);
+  await input.artifacts.writeJson("target-plan.json", {
+    targetProduct: "deepseek-harness",
+    targetRuntimeId: installation.runtimeId,
+    targetVersion: installation.version,
+    targetFingerprints: installation.fingerprints,
+    sourceWorkspace: input.workspace,
+    targetWorkspace: input.workspace,
+    targetSessionId,
+    operation: "dsh-native-session-event-v0-seed",
+    protocolVersion: dshSeed.protocolVersion,
+    agentPreset: "standard",
+    bridgeVersion: DSH_BRIDGE_VERSION,
+    backendMethods: [
+      "ctx.agents.create",
+      "ctx.sessions.flush",
+      "ctx.workspaceRegistry.create",
+      "workspace.attachSession",
+      "ctx.sessionPersistence.inspect",
+    ],
+    modelMethodsForbidden: ["agent.followup", "agent.steer", "session.prompt"],
+    modelInvoked: false,
+    mcpChanged: false,
+  });
+
+  if (input.request.dryRun) {
+    const result = makeResult({
+      migrationId: input.migrationId,
+      status: "DRY_RUN",
+      sourceThreadId: input.request.sourceThreadId,
+      targetSessionId: null,
+      workspace: input.workspace,
+      artifacts: input.artifacts,
+      sourceSnapshotSha256: input.sourceSnapshotSha256,
+      seed: input.seed,
+      projectionSha256: input.projectionSha256,
+      projection: input.projection,
+      targetProduct: "deepseek-harness",
+      targetBundleId: "@deepseek-ai/dsh",
+    });
+    await input.artifacts.writeJson("target-result.json", result);
+    await input.artifacts.appendJournal("DRY_RUN_COMPLETED", {
+      targetSessionIdPlanned: targetSessionId,
+      dshVersion: installation.version,
+      bridgeInstalled: installation.bridgeInstalled,
+      protocolVersion: dshSeed.protocolVersion,
+    });
+    return result;
+  }
+
+  const bridge = await ensureDshBridge(installation);
+  installation = await discoverDsh();
+  await input.artifacts.appendJournal("DSH_BRIDGE_READY", bridge);
+  const runtime = await ensureDshRuntime(
+    installation,
+    input.workspace,
+    input.artifacts.directory,
+  );
+  await input.artifacts.appendJournal("DSH_RUNTIME_READY", runtime);
+  const mcpBefore = await computeMcpFingerprint(
+    input.codex,
+    input.workspace,
+    "deepseek-harness",
+  );
+  await input.artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
+
+  const created = await invokeDshBridge<DshBridgeInspection>(
+    installation,
+    {
+      operation: "create",
+      sessionId: targetSessionId,
+      migrationKey: key,
+      workspace: input.workspace,
+      agentPreset: "standard",
+      title: targetSessionTitle(input.threadName, input.threadPreview),
+      seed: dshSeed.events,
+    },
+    input.artifacts.directory,
+  );
+  await input.artifacts.appendJournal(
+    created.reused ? "TARGET_REUSED" : "TARGET_SESSION_CREATED",
+    {
+      targetSessionId,
+      workspaceId: created.workspace.workspaceId,
+      targetWorkspace: created.workspace.path,
+      seedLength: created.header.seedLength,
+      modelInvoked: false,
+    },
+  );
+  const readback = await invokeDshBridge<DshBridgeInspection>(
+    installation,
+    {
+      operation: "inspect",
+      sessionId: targetSessionId,
+      workspace: input.workspace,
+      agentPreset: "standard",
+      expectedSeed: dshSeed.events,
+    },
+    input.artifacts.directory,
+  );
+  readback.reused = created.reused === true;
+  await input.artifacts.writeJson("dsh-native-readback.json", readback);
+  const verification = verifyDshInspection(readback, {
+    sessionId: targetSessionId,
+    workspace: input.workspace,
+    agentPreset: "standard",
+    seed: dshSeed,
+    projection: input.projection,
+  });
+  await input.artifacts.appendJournal("TARGET_VERIFIED", verification);
+  await assertPostConditions(
+    input.codex,
+    input.metadataPath,
+    input.sourceFingerprint,
+    input.workspace,
+    mcpBefore,
+    "deepseek-harness",
+  );
+  await openDshWeb();
+  await input.artifacts.appendJournal("DSH_OPENED", {
+    targetSessionId,
+    workspace: input.workspace,
+    url: "http://127.0.0.1:3080",
+  });
+  const result = makeResult({
+    migrationId: input.migrationId,
+    status: "COMPLETED",
+    sourceThreadId: input.request.sourceThreadId,
+    targetSessionId,
+    workspace: input.workspace,
+    artifacts: input.artifacts,
+    sourceSnapshotSha256: input.sourceSnapshotSha256,
+    seed: input.seed,
+    projectionSha256: input.projectionSha256,
+    projection: input.projection,
+    targetProduct: "deepseek-harness",
+    targetBundleId: "@deepseek-ai/dsh",
+  });
+  await input.artifacts.writeJson("target-result.json", result);
+  await input.artifacts.appendJournal("COMPLETED", {
+    targetSessionId,
+    workspace: input.workspace,
+    reused: verification.reused,
+  });
+  return result;
+}
+
+function sourceEpochMilliseconds(value: number): number {
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.trunc(value < 1_000_000_000_000 ? value * 1_000 : value);
 }
 
 async function runCursorTarget(input: {
