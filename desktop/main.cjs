@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, session } = require("electron");
-const { mkdir, realpath, stat } = require("node:fs/promises");
+const { mkdir, realpath, stat, readFile } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -42,15 +42,16 @@ function handle(channel, operation) {
 }
 
 handle("ide-hub:scan", async () => {
-  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery] =
+  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery, zcodeDiscovery] =
     await Promise.all([
       coreModule("codex/app-server-client.js"),
       coreModule("codex/reader.js"),
       coreModule("qoder/discovery.js"),
       coreModule("cursor/discovery.js"),
       coreModule("dsh/discovery.js"),
+      coreModule("zcode/discovery.js"),
     ]);
-  const codex = new CodexAppServerClient();
+  const codex = new CodexAppServerClient({ networkDisabled: process.platform === "darwin" });
   let threads;
   try {
     await codex.start();
@@ -132,11 +133,12 @@ handle("ide-hub:scan", async () => {
       };
     }
   }
-  const [qoder, qoderCn, cursor, dsh] = await Promise.all([
+  const [qoder, qoderCn, cursor, dsh, zcode] = await Promise.all([
     scanQoder(qoderDiscovery.discoverQoderInternational, "com.qoder.ide"),
     scanQoder(qoderDiscovery.discoverQoderCn, "com.aliyun.lingma.ide"),
     scanCursor(),
     scanDsh(),
+    zcodeDiscovery.inspectZcode().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
   ]);
 
   return {
@@ -145,6 +147,7 @@ handle("ide-hub:scan", async () => {
     qoderCn,
     cursor,
     dsh,
+    zcode,
     threads: threads.map((thread) => ({
       id: thread.id,
       name: thread.name,
@@ -183,6 +186,14 @@ handle("ide-hub:prepare-dsh", async () => {
     installedNow: bridge.installedNow,
     profileRestartRequired: bridge.profileRestartRequired,
   };
+});
+
+handle("ide-hub:preview-zcode", async (sourceThreadId) => {
+  const [{ runMigration }, { validateMigrationRequest }] = await Promise.all([coreModule("migration.js"), coreModule("request.js")]);
+  const result = await runMigration(validateMigrationRequest({ sourceProduct: "codex", targetProduct: "zcode", sourceThreadId,
+    contextPolicy: "goal-recent-plan-v1", dryRun: true }));
+  const projection = JSON.parse(await readFile(path.join(result.details.artifactsDir, "zcode-history.json"), "utf8"));
+  return { result, projection };
 });
 
 handle("ide-hub:migrate", async (sourceThreadId, targetProduct) => {
@@ -239,6 +250,17 @@ handle("ide-hub:open-target", async (workspace, targetProduct, targetSessionId) 
       );
     }
     return { workspace: canonicalWorkspace, targetProduct, targetSessionId };
+  }
+  if (targetProduct === "zcode") {
+    const { discoverZcode, openZcodeWorkspace } = await coreModule("zcode/discovery.js");
+    const { readZcodeTask, readZcodeSession } = await coreModule("zcode/storage.js");
+    const installation = await discoverZcode();
+    if (typeof targetSessionId !== "string") throw new Error("ZCode targetSessionId is required");
+    const task = readZcodeTask(installation.taskDb, targetSessionId, canonicalWorkspace);
+    const native = readZcodeSession(installation.sessionDb, targetSessionId);
+    if (!task || task.workspace_path !== canonicalWorkspace || native?.directory !== canonicalWorkspace || native?.path !== canonicalWorkspace) throw new Error("ZCode session/workspace does not match");
+    await openZcodeWorkspace(installation, canonicalWorkspace);
+    return { workspace: canonicalWorkspace, targetProduct, targetSessionId, openMode: "project-only", title: task.title };
   }
   if (targetProduct === "deepseek-harness") {
     const [{ discoverDsh }, { ensureDshRuntime, openDshWeb }] = await Promise.all([

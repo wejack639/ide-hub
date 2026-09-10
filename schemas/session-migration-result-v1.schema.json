@@ -28,13 +28,14 @@
       "additionalProperties": false,
       "required": ["product", "bundleId"],
       "properties": {
-        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness"] },
+        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness", "zcode"] },
         "bundleId": {
           "enum": [
             "com.qoder.ide",
             "com.aliyun.lingma.ide",
             "com.todesktop.230313mzl4w4u92",
-            "@deepseek-ai/dsh"
+            "@deepseek-ai/dsh",
+            "dev.zcode.app"
           ]
         }
       }

@@ -22,6 +22,7 @@ type RpcResponse = {
 export type CodexAppServerOptions = {
   executable?: string;
   requestTimeoutMs?: number;
+  networkDisabled?: boolean;
 };
 
 export interface AppServerRequester {
@@ -31,6 +32,7 @@ export interface AppServerRequester {
 export class CodexAppServerClient {
   readonly executable: string;
   readonly requestTimeoutMs: number;
+  readonly networkDisabled: boolean;
   #process: ChildProcessWithoutNullStreams | null = null;
   #reader: Interface | null = null;
   #nextId = 1;
@@ -41,11 +43,13 @@ export class CodexAppServerClient {
   constructor(options: CodexAppServerOptions = {}) {
     this.executable = options.executable ?? defaultCodexExecutable();
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
+    this.networkDisabled = options.networkDisabled ?? false;
   }
 
   async start(): Promise<void> {
     if (this.#started) return;
-    const process = spawn(this.executable, ["app-server", "--stdio"], {
+    const process = spawn(this.networkDisabled ? "/usr/bin/sandbox-exec" : this.executable,
+      this.networkDisabled ? ["-p", "(version 1)(allow default)(deny network*)", this.executable, "app-server", "--stdio"] : ["app-server", "--stdio"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: processEnvWithoutModelKeys(),
     });

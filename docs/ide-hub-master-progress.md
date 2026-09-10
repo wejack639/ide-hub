@@ -1,9 +1,9 @@
 # IDE Hub 任务进度总控
 
 > 文档角色：项目唯一进度真相源（Single Source of Truth）<br>
-> 最后更新：2026-09-09<br>
+> 最后更新：2026-09-10<br>
 > 当前阶段：Phase 0 多目标会话 Gate 收尾 + 桌面 MVP 适配扩展<br>
-> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness 四个目标。DSH `0.1.0-rc.6` 已通过版本与包指纹 Gate，由 Web profile 中一次安装的 bridge 在 DSH 进程内创建原生 SessionEvent 会话；真实会话已完成同工作区回读、实际下一轮和续聊后幂等复跑。迁移本身不调用模型、不修改 MCP；连续性 Gate 单独使用 DSH 已有模型配置。
+> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode 五个目标，但不代表全部连续性 Gate 通过。ZCode `3.10.2` 已完成离线原生迁移、重启后桌面打开、一轮真实上下文回复和续聊后幂等（13 条完整保留）；模型阻塞已解除，第二轮下一步验证因桌面控制 `cgWindowNotFound` 暂未完成。迁移本身不调用模型、不迁移或修改 MCP。
 
 ## 1. 使用规则
 
@@ -38,6 +38,8 @@
 | Qoder CN 迁移 Spec | `DONE` | 与国际版共用轮次投影，独立 bundle、runtime、socket 和 client identity |
 | Cursor 迁移 Spec | `DONE` | Codex → Cursor `3.18.9`；版本/Workbench 指纹锁定，A → canonical(A) |
 | DeepSeek Harness 迁移 Spec | `DONE` | Codex → DSH `0.1.0-rc.6`；版本/包指纹/bridge 协议锁定，A → canonical(A) |
+| ZCode 迁移 Spec | `DONE` | SESSION-MIG-005；ZCode 3.10.2 / CLI 0.16.5；原生 importedHistory 与同目录桌面任务 |
+| ZCode 迁移实现 / 发布 Gate | `BLOCKED` | AC-004 重启打开、AC-007 真实续聊后复跑通过；AC-005 第一轮旧事实验证通过，第二轮下一步因桌面控制无法捕捉窗口待补验，不是模型不可用 |
 | Phase 0 本地验证 | `IN_PROGRESS` | TypeScript 测试入口、请求/结果 Schema、Codex reader、原生轮次投影、journal 和测试已落地；CLI 仅为开发测试入口，不是用户入口 |
 | 本地桌面应用 | `DONE` | Electron 44.1.1 本地 `.app`；IDE Hub 自身无 HTTP 服务；正式原型层可扫描 DSH 并启用一次性本地 bridge |
 | 真实 IDE 迁移 | `IN_PROGRESS` | 国际版实际下一轮通过；CN 下一轮被账号状态 `112` 阻断；Cursor 与 DSH 原生历史、同工作区、打开、幂等和实际下一轮通过，Cursor 精确回滚待完成 |
@@ -51,6 +53,7 @@
 - 已有：[SESSION-MIG-002：Codex → Qoder CN](./specs/session-migration-002-codex-to-qoder-cn.md)。
 - 已有：[SESSION-MIG-003：Codex → Cursor](./specs/session-migration-003-codex-to-cursor.md)。
 - 已有：[SESSION-MIG-004：Codex → DeepSeek Harness](./specs/session-migration-004-codex-to-deepseek-harness.md)。
+- 已有：[SESSION-MIG-005：Codex → ZCode](./specs/session-migration-005-codex-to-zcode.md) 与 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
 - `prototype/` 已从参考原型升级为正式 Electron 渲染层；`desktop/` 下旧的简化 HTML/CSS/JS 已删除。
 - 已有 TypeScript 核心、`schemas/`、`src/`、`test/` 和 `desktop/`；已打包 `release/IDE Hub-darwin-arm64/IDE Hub.app`。
 - 桌面壳直接调用 TypeScript 迁移核心，不启动 Web 服务；Tauri/Rust 方案已由当前 Electron 实现取代。
@@ -70,7 +73,9 @@
 
 ### 2.3 当前焦点
 
-当前并行推进 M1 多目标 Gate 收尾、M2 桌面适配和已授权的 DSH 原生目标：
+当前 B3（SESSION-MIG-005）：Codex 负责 ZCode 同目录原生迁移。2026-09-10 已由实现方重启原生 IDE 并发送第一轮旧上下文问题，模型准确回答 Anneal/commit/选路/Goals 限制；复跑 `bcbe0c92...` 复用同一 Session，13 条记录逐条保留。下一动作是在桌面窗口可捕捉后，由实现方发送第二轮明确下一步并完成最后 UI 取证，不要求用户代测。具体证据见 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
+
+前序 DSH 结果保留：
 
 > SESSION-MIG-004 已完成 Codex → DSH 最短闭环；源会话 cwd=A 时，目标 SessionHeader.cwd 与 DSH Workspace 均为 canonical(A)，迁移阶段不调用模型、不触碰 MCP，续聊 Gate 与迁移操作分开记录。
 
@@ -247,7 +252,7 @@ MVP Gate：
 | ID | 范围 | 状态 |
 |---|---|---|
 | P2-01 | CodeBuddy source/target Adapter | `WAITING` |
-| P2-02 | ZCode source/C 级 target/MCP Adapter | `WAITING` |
+| P2-02 | ZCode source/MCP Adapter（原生 target 已由 P0-06E 实现） | `WAITING` |
 | P2-03 | Pi source/target SDK Adapter | `WAITING` |
 | P2-04S | DeepSeek Harness source Adapter | `WAITING` |
 | P2-04T | DeepSeek Harness target discovery 与原生会话迁移 | `DONE` |
@@ -270,9 +275,9 @@ MVP Gate：
 | P4-02 | 两端继续后的分支管理 | `WAITING` |
 | P4-03 | 冲突检测与人工选择 | `WAITING` |
 
-## 9. 当前执行批次 B0/B1/B2
+## 9. 当前执行批次 B0/B1/B2/B3
 
-目标：B0 按 SESSION-MIG-001/002 完成 Qoder 路径；B1 按 SESSION-MIG-003 完成 Cursor `3.18.9` 原生迁移；B2 按 SESSION-MIG-004 完成 DSH `0.1.0-rc.6` 原生迁移最短闭环。
+目标：B0 按 SESSION-MIG-001/002 完成 Qoder 路径；B1 按 SESSION-MIG-003 完成 Cursor `3.18.9` 原生迁移；B2 按 SESSION-MIG-004 完成 DSH `0.1.0-rc.6` 原生迁移最短闭环；B3 按 SESSION-MIG-005 完成 ZCode `3.10.2` 同目录原生迁移与桌面连续性验证。
 
 | 顺序 | 任务 | 状态 | 当前结果 |
 |---|---|---|---|
@@ -291,6 +296,8 @@ MVP Gate：
 | 13 | P0-08C | `IN_PROGRESS` | 旧 session `fb042951-6cd0-456f-9a36-4ee9cefe66e5`（0 system roots）与 `b54ba6c6-e51c-4d4b-84cd-9c71aaf3e314`（378-byte BlobID）禁止复用；新 session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96` 实际下一轮成功；仅精确回滚未完成 |
 | 14 | SESSION-MIG-004 / P2-04T / P3-02 | `DONE` | DSH rc.6 精确版本/包指纹、Web profile bridge 0.3.0、SessionEvent v0 seed、原生持久化、Workspace 挂载、同工作区回读和桌面入口完成 |
 | 15 | P0-08D | `DONE` | migration `3f017f8c-e471-48a9-ab00-d1ea945efa4c` 创建目标 Session；真实第 22 轮正确承接历史；复跑 migration `6b46b3f0-c0de-436c-b19c-33ddc0c6018b` 复用同一 Session 并保留 381 个事件 |
+| 16 | SESSION-MIG-005 / P0-06E | `DONE` | ZCode 原生逐条导入、精确任务索引、版本锁、源/目标断网子进程、完整预览、桌面迁移与项目打开；正式 UI migration `cf701981-b819-4790-8c3d-08d6c3916cb9` 同目录回读 5 条；131 条原生长历史及中断恢复测试通过 |
+| 17 | P0-08E | `BLOCKED` | 模型已可用；实现方第一轮真实回复命中旧事实、重启打开通过；续聊后 migration `bcbe0c92-d7f4-4a1d-b73c-fd7b8ad2afff` 复用目标并保留 13 条记录，无 session/create。第二轮与回复 UI 补充取证受 cgWindowNotFound 阻塞 |
 
 首个真实样本：
 
@@ -300,20 +307,23 @@ MVP Gate：
 | Qoder CN smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | 原生历史、同工作区与 Chat History 列表可见通过；目标 session `c2078118-3586-4e37-9b1e-db3d11607bc6`；实际下一轮被当前账号状态 `112` 阻断 |
 | Cursor smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | Cursor `3.18.9` 原生历史、32-byte BlobID、leading system root、同工作区、原生回读、打开和实际下一轮通过；目标 session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96` |
 | DSH smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a079cc-0137-78a2-b44c-8246d39f68fd` | paginated | DSH `0.1.0-rc.6` 原生 SessionEvent 历史、同 Workspace、原生回读、真实下一轮和续聊后幂等复跑通过；目标 session `session-idehub-116368030a2fa5a2a44915824725c5c1` |
+| ZCode smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | ZCode 3.10.2；目标 `sess_idehub_3d23d31cadaa63b5f29182b1a896d2181942c779243e901c9ade0f044d819f8a`；5 条迁移前缀、用户原有 6 条后缀、实现方实际新增 2 条问答全部在复跑后保留；第二轮待补 |
 | 兼容回归 | `/Users/domino/develop/IdeaProjects/temp` | `019ffe64-6259-7cc3-b567-3ac6425f7d6f` | legacy | reader 单测通过；未作为首个目标写入样本 |
 
-B0/B1/B2 明确不做：
+B0/B1/B2/B3 明确不做：
 
 - 不迁移或写入任何 MCP 配置。
 - 不实现 ZIP 跨电脑导入导出。
 - 不实现 Context Bridge。
-- 不接入 Qoder、Cursor、DSH 之外的其他目标产品。
+- 不接入 Qoder、Cursor、DSH、ZCode 之外的其他目标产品。
 
 ## 10. 阻塞项与待决策
 
 ### 10.1 当前阻塞项
 
 Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外部阻塞，但精确失败回滚受当前版本缺少公开 delete-by-id 原生命令限制，仍作为未通过 Gate 管理。DSH rc.6 目标路径无当前阻塞；其他 DSH 版本继续由版本 Gate 禁止写入。
+
+ZCode 模型阻塞已于 2026-09-10 解除，第一轮真实上下文回复与 AC-007 真实续聊后复跑通过。当前仅 AC-005 第二轮/回复 UI 补充取证受桌面控制阻塞：ZCode、访达均报 `cgWindowNotFound`，重连/重置控制会话仍未恢复；需保持 Mac 解锁且窗口可见后由实现方继续，不需要用户代发消息。IDE Hub 不需要 Key。另：2026-09-09 扫描发现 Cursor 已升级到 3.19.7，当前 3.18.9 适配正确拒绝写入，旧版本通过的历史 Gate 不能当作新版已兼容。
 
 ### 10.2 待决策
 
@@ -366,6 +376,10 @@ Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外
 - Gate 失败：相关任务回到 `IN_PROGRESS`，不得通过降低完成定义直接标记 `DONE`。
 
 ## 13. 变更记录
+
+2026-09-10 补验 ZCode：原生 IDE 退出/重启后打开同一任务；实现方实际发送旧上下文问题并收到正确回复（正文 hash `3142a44e67971eefa8d847948fe03dffcb8894f11940ded67ed80b0a19ee9bfa`）；Electron 真进程复跑 `bcbe0c92...` 保留全部 13 条记录，无重新导入。AC-004/AC-007 通过，AC-005 第二轮因桌面控制故障待补。48 项测试与构建/类型检查通过；本轮未改生产迁移代码、未提交。
+
+2026-09-09 新增 SESSION-MIG-005：ZCode 3.10.2 原生离线迁移及正式向导已实现，真实桌面迁移 `cf701981-b819-4790-8c3d-08d6c3916cb9` 回读同目录 5 条消息；48 项常规测试、单独 131 条原生长历史/恢复测试和 Electron 真进程迁移通过。完整发布 Gate 保留 `BLOCKED`（目标无可用模型），重启后的再次打开 UI 与真实续聊后复跑尚待完成，详见 [验收记录](./verification/session-migration-005-zcode.md)。
 
 | 日期 | 变更 | 影响 |
 |---|---|---|

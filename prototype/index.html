@@ -122,7 +122,7 @@
 
           <div class="card">
             <div class="card-title">离线模式 <span class="badge b-info">强制开启</span></div>
-            <p class="card-p">IDE Hub 不发起网络请求、不内置模型 SDK、不读取模型 API Key。目标 IDE 继续对话时使用它自己的账号与模型配置，与 IDE Hub 无关。</p>
+            <p class="card-p">IDE Hub 不发起网络请求、不内置模型 SDK、不使用或复制模型 API Key。目标 IDE 继续对话时使用它自己的账号与模型配置，与 IDE Hub 无关。</p>
             <div class="switch-row locked"><span>禁止任何网络请求（含远程 MCP 校验）</span><label class="switch on locked"><input type="checkbox" checked disabled><i></i></label></div>
           </div>
 
@@ -263,8 +263,8 @@
           </button>
           <button class="tcard" data-target="zcode">
             <span class="prod-tag zcode">ZCode</span>
-            <span class="cap cap-c">C 级 · 交接</span>
-            <span class="tcard-desc">先检查同作用域 .zcode 配置是否使 .agents 失效</span>
+            <span class="cap cap-b">原生历史 · 已实现</span>
+            <span class="tcard-desc">逐条 importedHistory + 同目录任务登记；新进程全量回读</span>
           </button>
           <button class="tcard" data-target="codebuddy">
             <span class="prod-tag codebuddy">CodeBuddy CN</span>
@@ -464,7 +464,7 @@
     </div>
 
     <footer class="wiz-foot">
-      <div class="wiz-foot-info">仅迁移会话与工作区 · 不读取、不写入用户 MCP 配置</div>
+      <div class="wiz-foot-info">仅迁移会话与工作区 · MCP 仅校验内容指纹，不迁移、不修改</div>
       <div class="wiz-foot-btns">
         <button class="btn btn-ghost" data-wiz-close>取消</button>
         <button class="btn btn-ghost" data-wiz-prev>上一步</button>

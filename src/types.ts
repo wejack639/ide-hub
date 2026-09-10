@@ -11,13 +11,15 @@ export type DshTargetProduct = "deepseek-harness";
 export type MigrationTargetProduct =
   | QoderTargetProduct
   | CursorTargetProduct
-  | DshTargetProduct;
+  | DshTargetProduct
+  | "zcode";
 export type CursorBundleId = "com.todesktop.230313mzl4w4u92";
 export type DshRuntimeId = "@deepseek-ai/dsh";
 export type MigrationTargetBundleId =
   | QoderBundleId
   | CursorBundleId
-  | DshRuntimeId;
+  | DshRuntimeId
+  | "dev.zcode.app";
 
 export type MigrationRequest = {
   sourceProduct: "codex";

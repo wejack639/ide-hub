@@ -63,11 +63,12 @@ import type {
 import { fingerprintFile, sha256Text } from "./util/fs.js";
 import { stableJson } from "./util/stable-json.js";
 import { resolveWorkspace } from "./workspace.js";
+import { migrateZcode } from "./zcode/migration.js";
 
 export async function runMigration(request: MigrationRequest): Promise<MigrationResult> {
   const migrationId = randomUUID();
   const artifacts = new MigrationArtifacts(migrationId);
-  const codex = new CodexAppServerClient();
+  const codex = new CodexAppServerClient({ networkDisabled: request.targetProduct === "zcode" && process.platform === "darwin" });
   await artifacts.initialize();
   await artifacts.appendJournal("CREATED", { migrationId });
   await artifacts.writeJson("request.json", request);
@@ -131,6 +132,23 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
       seedContextBytes: seed.bytes,
       lossReport: seed.lossReport,
     });
+    if (request.targetProduct === "zcode") {
+      const mcpBefore = await computeMcpFingerprint(codex, workspace.workspaceCanonical, "zcode");
+      await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
+      const target = await migrateZcode({ snapshot, artifacts, dryRun: request.dryRun });
+      const postConditions = await assertPostConditions(codex, metadata.path, sourceAfterRead, workspace.workspaceCanonical, mcpBefore, "zcode");
+      await artifacts.appendJournal("POST_CONDITIONS_VERIFIED", postConditions);
+      const result = makeResult({ migrationId, status: request.dryRun ? "DRY_RUN" : "COMPLETED",
+        sourceThreadId: request.sourceThreadId, targetSessionId: target.targetSessionId,
+        workspace: workspace.workspaceCanonical, artifacts, sourceSnapshotSha256,
+        seed: { ...seed, lossReport: target.projection.lossReport },
+        projectionSha256: sha256Text(stableJson(target.projection)), projection: target.projection,
+        targetProduct: "zcode", targetBundleId: "dev.zcode.app" });
+      await artifacts.writeJson("target-result.json", result);
+      await artifacts.appendJournal(result.status, { targetSessionId: target.targetSessionId, reused: target.reused });
+      return result;
+    }
+
     const projection = projectConversationToQoder(extractVisibleMessages(snapshot));
     const projectionCanonical = stableJson(projection);
     const projectionSha256 = sha256Text(projectionCanonical);
@@ -870,7 +888,7 @@ async function assertPostConditions(
   workspace: string,
   mcpBaseline: Awaited<ReturnType<typeof computeMcpFingerprint>>,
   targetProduct: MigrationRequest["targetProduct"],
-): Promise<void> {
+): Promise<{ sourceAfter: FileFingerprint; mcpAfter: Awaited<ReturnType<typeof computeMcpFingerprint>> }> {
   const sourceAfter = await fingerprintFile(sourcePath);
   assertFingerprintUnchanged(sourceBaseline, sourceAfter, "target migration");
   const mcpAfter = await computeMcpFingerprint(codex, workspace, targetProduct);
@@ -881,6 +899,7 @@ async function assertPostConditions(
       { before: mcpBaseline, after: mcpAfter },
     );
   }
+  return { sourceAfter, mcpAfter };
 }
 
 function assertFingerprintUnchanged(
@@ -911,7 +930,7 @@ function makeResult(input: {
   sourceSnapshotSha256: string;
   seed: ReturnType<typeof buildSeedContext>;
   projectionSha256: string;
-  projection: ReturnType<typeof projectConversationToQoder>;
+  projection: Pick<ReturnType<typeof projectConversationToQoder>, "turns" | "projectedMessageCount">;
   targetProduct: MigrationResult["continuation"]["product"];
   targetBundleId: MigrationResult["continuation"]["bundleId"];
 }): MigrationResult {

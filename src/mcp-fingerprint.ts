@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import JSON5 from "json5";
 import type { AppServerRequester } from "./codex/app-server-client.js";
 import type { McpFingerprint, MigrationTargetProduct } from "./types.js";
@@ -24,6 +24,8 @@ export async function computeMcpFingerprint(
       ? await readEffectiveCursorMcp(workspace)
       : targetProduct === "deepseek-harness"
         ? await readEffectiveDshMcp()
+      : targetProduct === "zcode"
+        ? await readEffectiveZcodeMcp(workspace)
       : await readEffectiveQoderMcp(workspace);
   const codexSha256 = sha256Text(stableJson(codexMcp));
   const targetSha256 = sha256Text(stableJson(targetMcp));
@@ -46,6 +48,20 @@ async function readEffectiveDshMcp(): Promise<Record<string, unknown>> {
   ];
   const files: Record<string, string> = {};
   for (const path of candidates) {
+    const content = await readTextIfExists(path);
+    if (content !== null) files[path] = sha256Text(content);
+  }
+  return files;
+}
+
+async function readEffectiveZcodeMcp(workspace: string): Promise<Record<string, string>> {
+  const candidates = [join(homedir(), ".zcode/cli/config.json"), join(homedir(), ".zcode/v2/config.json"), join(homedir(), ".zcode/v2/mcp.json")];
+  for (let path = workspace; ; path = dirname(path)) {
+    candidates.push(join(path, "zcode.json"), join(path, ".zcode/config.json"));
+    if (dirname(path) === path) break;
+  }
+  const files: Record<string, string> = {};
+  for (const path of new Set(candidates)) {
     const content = await readTextIfExists(path);
     if (content !== null) files[path] = sha256Text(content);
   }

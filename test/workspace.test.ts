@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { MigrationError } from "../src/errors.js";
 import { assertSameWorkspace, resolveWorkspace } from "../src/workspace.js";
@@ -39,4 +40,12 @@ test("workspace rejects relative source paths", async () => {
       error instanceof MigrationError &&
       error.code === "SOURCE_WORKSPACE_NOT_ABSOLUTE",
   );
+});
+
+test("workspace rejects missing directories and ordinary files before migration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ide-hub-workspace-invalid-"));
+  await assert.rejects(resolveWorkspace(join(root, "missing")), (error: unknown) =>
+    error instanceof MigrationError && error.code === "SOURCE_WORKSPACE_NOT_FOUND");
+  await assert.rejects(resolveWorkspace(fileURLToPath(import.meta.url)), (error: unknown) =>
+    error instanceof MigrationError && error.code === "SOURCE_WORKSPACE_NOT_DIRECTORY");
 });

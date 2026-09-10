@@ -25,6 +25,11 @@ test("desktop shell uses the prototype renderer and exposes a narrow IPC bridge"
   assert.match(main, /discoverQoderCn/u);
   assert.match(main, /inspectCursor/u);
   assert.match(main, /inspectDsh/u);
+  assert.match(main, /inspectZcode/u);
+  assert.match(main, /preview-zcode/u);
+  assert.match(renderer, /window\.ideHub\.previewZcode/u);
+  assert.match(html, /data-target="zcode">\s*<span[^>]*>ZCode<\/span>\s*<span[^>]*>原生历史 · 已实现/u);
+  assert.match(renderer, /全部可见消息 · 保留原顺序与独立角色/u);
   assert.match(main, /ensureDshBridge/u);
   assert.match(main, /cursor\/bridge\.js/u);
   assert.match(main, /com\.aliyun\.lingma\.ide/u);
