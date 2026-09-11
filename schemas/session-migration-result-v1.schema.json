@@ -28,14 +28,15 @@
       "additionalProperties": false,
       "required": ["product", "bundleId"],
       "properties": {
-        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness", "zcode"] },
+        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness", "zcode", "pi"] },
         "bundleId": {
           "enum": [
             "com.qoder.ide",
             "com.aliyun.lingma.ide",
             "com.todesktop.230313mzl4w4u92",
             "@deepseek-ai/dsh",
-            "dev.zcode.app"
+            "dev.zcode.app",
+            "@earendil-works/pi-coding-agent"
           ]
         }
       }

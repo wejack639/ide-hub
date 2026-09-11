@@ -17,6 +17,7 @@ const PRODUCT_META = {
 
 const PRODUCT_ORDER = ["codex", "qoder", "qodercn", "cursor", "claude", "codebuddy", "dsh", "zcode", "pi"];
 const MIGRATION_TARGETS = {
+  pi: { productId: "pi", stateKey: "pi", name: "Pi" },
   zcode: { productId: "zcode", stateKey: "zcode", name: "ZCode" },
   "qoder-international": {
     productId: "qoder",
@@ -56,6 +57,9 @@ const state = {
   dsh: null,
   zcode: null,
   zcodePreview: null,
+  pi: null,
+  piPreview: null,
+  piPreviewGeneration: 0,
   current: null,
   selected: new Set(),
   search: "",
@@ -83,6 +87,7 @@ function defaultMigrationTarget() {
   if (state.qoderCn?.installed) return "qoder-cn";
   if (state.cursor?.installed && state.cursor?.compatible) return "cursor";
   if (state.zcode?.installed && state.zcode?.compatible) return "zcode";
+  if (state.pi?.installed && state.pi?.compatible) return "pi";
   if (state.dsh?.installed && state.dsh?.compatible && state.dsh?.bridgeCompatible) {
     return "deepseek-harness";
   }
@@ -185,6 +190,11 @@ function renderProducts() {
             : "未发现 Cursor",
         status: usable ? "ok" : "none",
       };
+    }
+    if (id === "pi") {
+      return { id, version: state.pi?.version ?? "未安装",
+        note: state.pi?.compatible ? "JSONL v3 原生历史 · 终端续聊" : state.pi?.compatibilityError ?? "未发现 Pi",
+        status: state.pi?.compatible ? "ok" : "warn" };
     }
     if (id === "zcode") {
       return { id, version: state.zcode?.version ?? "未安装",
@@ -334,6 +344,7 @@ function renderDetail() {
   const canMigrateCn = thread.migratable && state.qoderCn?.installed && !state.migrating;
   const canMigrateCursor = thread.migratable && state.cursor?.installed && state.cursor?.compatible && !state.migrating;
   const canMigrateZcode = thread.migratable && state.zcode?.compatible && !state.migrating;
+  const canMigratePi = thread.migratable && state.pi?.compatible && !state.migrating;
   const canMigrateDsh = thread.migratable
     && state.dsh?.installed
     && state.dsh?.compatible
@@ -400,6 +411,7 @@ function renderDetail() {
       <div class="muted-note">${cursorStatus}</div>
       <div class="muted-note">${dshStatus}</div>
       <div class="muted-note">${esc(state.zcode?.compatible ? `ZCode ${state.zcode.version} 原生导入已就绪` : state.zcode?.compatibilityError ?? "未发现 ZCode")}</div>
+      <div class="muted-note">${esc(state.pi?.compatible ? `Pi ${state.pi.version} · 原生历史 / 终端续聊` : state.pi?.compatibilityError ?? "未发现 Pi")}</div>
     </div>
     <div class="detail-sec">
       <div class="ds-label">迁移边界</div>
@@ -413,6 +425,7 @@ function renderDetail() {
       <button class="btn btn-ghost" id="detailMigrateCn" ${canMigrateCn ? "" : "disabled"}>迁移到 Qoder CN…</button>
       <button class="btn btn-ghost" id="detailMigrateCursor" ${canMigrateCursor ? "" : "disabled"}>迁移到 Cursor…</button>
       <button class="btn btn-ghost" id="detailMigrateZcode" ${canMigrateZcode ? "" : "disabled"}>迁移到 ZCode…</button>
+      <button class="btn btn-ghost" id="detailMigratePi" ${canMigratePi ? "" : "disabled"}>迁移到 Pi…</button>
       ${canPrepareDsh
         ? '<button class="btn btn-ghost" id="detailPrepareDsh">启用 DSH 本地迁移桥…</button>'
         : `<button class="btn btn-ghost" id="detailMigrateDsh" ${canMigrateDsh ? "" : "disabled"}>迁移到 DeepSeek Harness…</button>`}
@@ -422,6 +435,7 @@ function renderDetail() {
   $("#detailMigrateCn").addEventListener("click", () => openMigration(thread, "qoder-cn"));
   $("#detailMigrateCursor").addEventListener("click", () => openMigration(thread, "cursor"));
   $("#detailMigrateZcode").addEventListener("click", () => openMigration(thread, "zcode"));
+  $("#detailMigratePi").addEventListener("click", () => openMigration(thread, "pi"));
   $("#detailPrepareDsh")?.addEventListener("click", () => void prepareDshBridge());
   $("#detailMigrateDsh")?.addEventListener("click", () => openMigration(thread, "deepseek-harness"));
   $("#detailExport").addEventListener("click", () => openStubWizard("ovExport"));
@@ -465,7 +479,7 @@ function openMigration(thread = chosenThread(), requestedTarget = null) {
   }
   const targetProduct = requestedTarget ?? defaultMigrationTarget();
   if (targetProduct === null) {
-    toast("未发现可用的 Qoder、Cursor 或 DeepSeek Harness，请先安装并启用目标", "warn");
+    toast("未发现可用迁移目标，请查看产品安装和兼容状态", "warn");
     return;
   }
   const target = migrationTarget(targetProduct);
@@ -477,6 +491,8 @@ function openMigration(thread = chosenThread(), requestedTarget = null) {
   state.migrationThread = thread;
   state.migrationTarget = targetProduct;
   state.zcodePreview = null;
+  state.piPreview = null;
+  state.piPreviewGeneration += 1;
   state.migrationStep = 1;
   state.migrationVisited = new Set([1]);
   state.migrationStarted = false;
@@ -496,6 +512,7 @@ function renderMigrationContext(thread) {
   const isCursor = state.migrationTarget === "cursor";
   const isDsh = state.migrationTarget === "deepseek-harness";
   const isZcode = state.migrationTarget === "zcode";
+  const isPi = state.migrationTarget === "pi";
   $(".wiz-sub", overlay).textContent = `Codex → ${target.name} · 原生 User / Assistant 历史`;
   const status = statusOf(thread);
   const first = $('[data-pane="1"]', overlay);
@@ -562,15 +579,17 @@ function renderMigrationContext(thread) {
     card.classList.toggle("selected", implemented);
     card.classList.toggle("disabled", !implemented);
     if (implemented) {
-      $(".rcard-head", card).textContent = isZcode ? "完整原生历史" : "标准";
-      $(".rcard-desc", card).textContent = isZcode
+      $(".rcard-head", card).textContent = isZcode || isPi ? "完整原生历史" : "标准";
+      $(".rcard-desc", card).textContent = isZcode || isPi
         ? "全部可见消息 · 保留原顺序与独立角色"
         : "Handoff + 最近 N 轮 + 关键证据";
     }
   });
   const targetNotes = $$('[data-pane="2"] .muted-note', overlay);
   targetNotes[0].textContent = `目标路径不可修改：${target.name} 会话固定创建在源会话的同一工作区。`;
-  targetNotes[1].textContent = isCursor
+  targetNotes[1].textContent = isPi
+    ? `Pi ${installation.version} · SessionManager / JSONL v3；迁移不调用模型。结果入口在终端打开确切会话，不需要手工复制历史。`
+    : isCursor
     ? `当前目标使用 ${installation.bundleId} · Cursor ${installation.version} · Chat JSON v1；本地桥只调用 IDE 内置导入，不安装 Agent CLI。`
     : isZcode
       ? `ZCode ${installation.version} · 原生 importedHistory；协议要求 claudeCode 兼容标签，实际来源始终是 Codex。迁移无需 Key。`
@@ -615,6 +634,7 @@ function renderMigrationContext(thread) {
 
 function goMigrationStep(step) {
   if (!state.migrationThread || step < 1 || step > MIGRATION_STEPS.length) return;
+  if (step === 7 && state.migrationTarget === "pi" && (!state.piPreview || !$("#migConfirm").checked)) return;
   state.migrationStep = step;
   state.migrationVisited.add(step);
   const overlay = $("#ovMigration");
@@ -635,8 +655,46 @@ function goMigrationStep(step) {
     next.disabled = true;
     void loadZcodePreview();
   }
+  if (state.migrationTarget === "pi" && step >= 4 && step <= 6) {
+    next.disabled = true;
+    void loadPiPreview();
+  }
   if (step === 3) renderSourceChecks();
   if (step === 7 && !state.migrationStarted) void executeMigration();
+}
+
+async function loadPiPreview() {
+  const thread = state.migrationThread;
+  const generation = state.piPreviewGeneration;
+  const pane = $('#ovMigration [data-pane="4"]');
+  if (!state.piPreview) {
+    pane.innerHTML = '<h3 class="pane-title">正在离线读取 Pi 完整历史投影…</h3><p>预览不会创建 Pi 目录或会话。</p>';
+    try {
+      const response = await window.ideHub.previewPi(thread.id);
+      if (generation !== state.piPreviewGeneration || state.migrationTarget !== "pi") return;
+      if (!response.ok) throw response.error;
+      state.piPreview = response.data;
+    } catch (error) {
+      if (generation === state.piPreviewGeneration && state.migrationTarget === "pi") pane.innerHTML = `<div class="banner banner-error">预览失败：${esc(normalizeError(error).message)}。返回上一步重试。</div>`;
+      return;
+    }
+  }
+  const { projection, result, plan } = state.piPreview;
+  pane.innerHTML = `<h3 class="pane-title">Pi 完整原生历史 · ${projection.messages.length} 条</h3>
+    <p class="mono">${esc(result.workspace)} → 同一目录</p><div class="banner banner-info">${esc(projection.compatibilityNote)}</div>
+    ${projection.messages.map((m, i) => `<details class="card"><summary>${i + 1}. ${esc(m.role)} · ${esc(m.content.slice(0, 90))}</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(m.content)}</pre></details>`).join("")}`;
+  const loss = projection.lossReport;
+  $('#ovMigration [data-pane="5"] tbody').innerHTML = `
+    <tr><td>User / Assistant 正文</td><td>完整迁移</td><td>${loss.includedMessageCount} 条，${loss.includedMessageBytes} bytes；不截断、不合并</td></tr>
+    <tr><td>无可迁移文本的消息</td><td>仅归档</td><td>${loss.omittedMessageCount} 条；附件/事件损失见下方</td></tr>
+    ${Object.entries(loss.omittedEventTypes).map(([type, count]) => `<tr><td>${esc(type)}</td><td>不迁移执行状态/附件</td><td>${count} 项，源记录保留在本地 Capsule</td></tr>`).join("")}
+    <tr><td>system / 隐藏推理</td><td>不复制</td><td>由 Pi 自己构建当前运行上下文</td></tr>
+    <tr><td>MCP / 模型 / 账号</td><td>不迁移、不修改</td><td>历史导入无需 Key；续聊使用 Pi 配置</td></tr>`;
+  $('#ovMigration [data-pane="6"] .pane-sub').textContent = "禁网 SDK 构造原生记录，独占发布完整 JSONL；原生列表和上下文回读后才报告导入成功。重复迁移保留已有续聊。";
+  $('#ovMigration [data-pane="6"] .ops').innerHTML = `<div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>${esc(plan.sessionPath)}</code><div class="op-sub">Pi ${esc(plan.version)} · header cwd = ${esc(result.workspace)}；失败记录可恢复，不覆盖其他会话</div></div></div>
+    <div class="op-row"><span class="op-badge b-conf">不修改</span><div class="op-main">Codex 源会话、MCP、模型和账号配置</div></div>
+    <div class="banner banner-info">导入后在终端中打开 Pi 会话。实际发送消息使用 Pi 已配置模型；迁移完成不表示已验证真实续聊。</div>`;
+  $('#ovMigration [data-wiz-next]').disabled = state.migrationStep === 6 && !$("#migConfirm").checked;
 }
 
 async function loadZcodePreview() {
@@ -735,7 +793,9 @@ function renderMigrationResult(result) {
   const container = $("#migResult");
   const loss = result.details.lossReport;
   const target = migrationTarget(result.continuation.product);
-  const continuationHelp = result.continuation.product === "cursor"
+  const continuationHelp = result.continuation.product === "pi"
+    ? "Pi 原生历史已落盘、重开和列表回读。在终端中打开 Pi 会话后，可用 /resume 查找 Codex 标题。历史 provider ide-hub/codex-history 是导入标识，Pi 会使用自己的模型；无需为此标识配置 provider。真实续聊未由本次迁移验证；如无模型，请在 Pi /login 或 /model 配置。"
+    : result.continuation.product === "cursor"
     ? `已按目标 Session ID 请求 Cursor 打开该原生会话；也可从 Chat History 中按“Codex · …”标题找到它。`
     : result.continuation.product === "zcode"
       ? `ZCode 原生历史已重开回读，桌面任务已登记。点击下方按钮打开项目，在任务列表找到“Codex · …”。当前入口只打开项目，不声称自动定位指定会话；Session ID：${result.targetSessionId}。迁移阶段不发送模型消息。`
@@ -761,7 +821,7 @@ function renderMigrationResult(result) {
     </div>
     <div class="banner banner-info result-help">${esc(continuationHelp)}</div>
     <div class="result-actions">
-      <button class="btn btn-primary" id="migOpenTarget">打开 ${esc(target.name)} 工作区</button>
+      <button class="btn btn-primary" id="migOpenTarget">${result.continuation.product === "pi" ? "在终端中打开 Pi 会话" : `打开 ${esc(target.name)} 工作区`}</button>
       <button class="btn btn-ghost" data-real-close>关闭向导</button>
       <button class="btn btn-danger-ghost" disabled>回滚（未实现）</button>
     </div>`;
@@ -899,6 +959,7 @@ async function scan() {
     state.cursor = response.data.cursor;
     state.dsh = response.data.dsh;
     state.zcode = response.data.zcode;
+    state.pi = response.data.pi;
     const stillExists = state.threads.some((thread) => thread.id === state.current);
     if (!stillExists) state.current = state.threads[0]?.id ?? null;
     state.selected = new Set([...state.selected].filter((id) => state.threads.some((thread) => thread.id === id)));
@@ -911,6 +972,7 @@ async function scan() {
     state.cursor = null;
     state.dsh = null;
     state.zcode = null;
+    state.pi = null;
     state.current = null;
     toast(`扫描失败：${error.message}`, "warn");
   } finally {
@@ -967,12 +1029,13 @@ function bindEvents() {
       return;
     }
     if (state.migrationTarget === "zcode" && state.migrationStep >= 4 && !state.zcodePreview) return;
+    if (state.migrationTarget === "pi" && state.migrationStep >= 4 && !state.piPreview) return;
     goMigrationStep(state.migrationStep + 1);
   });
   $("[data-wiz-prev]", migrationOverlay).addEventListener("click", () => goMigrationStep(state.migrationStep - 1));
   $$("[data-wiz-close]", migrationOverlay).forEach((button) => button.addEventListener("click", closeMigration));
   $("#migConfirm").addEventListener("change", () => {
-    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview);
+    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview) || (state.migrationTarget === "pi" && !state.piPreview);
   });
 
   for (const id of Object.keys(STUB_WIZARDS)) {

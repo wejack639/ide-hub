@@ -53,7 +53,7 @@ export async function assertSameWorkspace(
   if (!sameIdentity || target.workspaceCanonical !== expected.workspaceCanonical) {
     throw new MigrationError(
       "TARGET_WORKSPACE_MISMATCH",
-      `Qoder target workspace must be ${expected.workspaceCanonical}, got ${target.workspaceCanonical}`,
+      `目标工作区必须为 ${expected.workspaceCanonical}，实际为 ${target.workspaceCanonical}`,
       { expected, actual: target },
     );
   }

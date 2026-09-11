@@ -42,7 +42,7 @@ function handle(channel, operation) {
 }
 
 handle("ide-hub:scan", async () => {
-  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery, zcodeDiscovery] =
+  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery, zcodeDiscovery, piDiscovery] =
     await Promise.all([
       coreModule("codex/app-server-client.js"),
       coreModule("codex/reader.js"),
@@ -50,6 +50,7 @@ handle("ide-hub:scan", async () => {
       coreModule("cursor/discovery.js"),
       coreModule("dsh/discovery.js"),
       coreModule("zcode/discovery.js"),
+      coreModule("pi/discovery.js"),
     ]);
   const codex = new CodexAppServerClient({ networkDisabled: process.platform === "darwin" });
   let threads;
@@ -133,12 +134,13 @@ handle("ide-hub:scan", async () => {
       };
     }
   }
-  const [qoder, qoderCn, cursor, dsh, zcode] = await Promise.all([
+  const [qoder, qoderCn, cursor, dsh, zcode, pi] = await Promise.all([
     scanQoder(qoderDiscovery.discoverQoderInternational, "com.qoder.ide"),
     scanQoder(qoderDiscovery.discoverQoderCn, "com.aliyun.lingma.ide"),
     scanCursor(),
     scanDsh(),
     zcodeDiscovery.inspectZcode().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
+    piDiscovery.inspectPi().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
   ]);
 
   return {
@@ -148,6 +150,7 @@ handle("ide-hub:scan", async () => {
     cursor,
     dsh,
     zcode,
+    pi,
     threads: threads.map((thread) => ({
       id: thread.id,
       name: thread.name,
@@ -196,6 +199,15 @@ handle("ide-hub:preview-zcode", async (sourceThreadId) => {
   return { result, projection };
 });
 
+handle("ide-hub:preview-pi", async (sourceThreadId) => {
+  const [{ runMigration }, { validateMigrationRequest }] = await Promise.all([coreModule("migration.js"), coreModule("request.js")]);
+  const result = await runMigration(validateMigrationRequest({ sourceProduct: "codex", targetProduct: "pi", sourceThreadId,
+    contextPolicy: "goal-recent-plan-v1", dryRun: true }));
+  const projection = JSON.parse(await readFile(path.join(result.details.artifactsDir, "pi-history.json"), "utf8"));
+  const plan = JSON.parse(await readFile(path.join(result.details.artifactsDir, "target-plan.json"), "utf8"));
+  return { result, projection, plan };
+});
+
 handle("ide-hub:migrate", async (sourceThreadId, targetProduct) => {
   if (typeof sourceThreadId !== "string") {
     throw new Error("sourceThreadId must be a string");
@@ -232,6 +244,16 @@ handle("ide-hub:open-target", async (workspace, targetProduct, targetSessionId) 
   const workspaceStat = await stat(canonicalWorkspace);
   if (!workspaceStat.isDirectory()) {
     throw new Error("workspace is not a directory");
+  }
+  if (targetProduct === "pi") {
+    if (typeof targetSessionId !== "string") throw new Error("Pi targetSessionId is required");
+    const [{ inspectPi }, { resolvePiTarget }, { openPiSession }] = await Promise.all([
+      coreModule("pi/discovery.js"), coreModule("pi/migration.js"), coreModule("pi/runtime.js"),
+    ]);
+    const installation = await inspectPi();
+    const sessionPath = await resolvePiTarget(installation, canonicalWorkspace, targetSessionId);
+    await openPiSession(installation, canonicalWorkspace, sessionPath, targetSessionId);
+    return { workspace: canonicalWorkspace, targetProduct, targetSessionId, openMode: "terminal-session" };
   }
   if (targetProduct === "cursor") {
     const [{ discoverCursor, openCursorWorkspace }, { invokeCursorBridge }] =

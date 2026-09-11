@@ -27,6 +27,12 @@ test("desktop shell uses the prototype renderer and exposes a narrow IPC bridge"
   assert.match(main, /inspectDsh/u);
   assert.match(main, /inspectZcode/u);
   assert.match(main, /preview-zcode/u);
+  assert.match(main, /inspectPi/u);
+  assert.match(main, /preview-pi/u);
+  assert.match(renderer, /window\.ideHub\.previewPi/u);
+  assert.match(preload, /previewPi:/u);
+  assert.match(renderer, /在终端中打开 Pi 会话/u);
+  assert.match(html, /data-target="pi">\s*<span[^>]*>Pi<\/span>\s*<span[^>]*>原生历史 · 已实现/u);
   assert.match(renderer, /window\.ideHub\.previewZcode/u);
   assert.match(html, /data-target="zcode">\s*<span[^>]*>ZCode<\/span>\s*<span[^>]*>原生历史 · 已实现/u);
   assert.match(renderer, /全部可见消息 · 保留原顺序与独立角色/u);

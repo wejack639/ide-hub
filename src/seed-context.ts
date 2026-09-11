@@ -151,13 +151,13 @@ export function buildSeedContext(
   };
 }
 
-export function extractVisibleMessages(snapshot: SourceSnapshot): NormalizedMessage[] {
+export function extractVisibleMessages(snapshot: SourceSnapshot, options: { preserveWhitespace?: boolean } = {}): NormalizedMessage[] {
   const messages: NormalizedMessage[] = [];
   for (const turn of snapshot.thread.turns) {
     for (const item of turn.items) {
       if (item.type === "userMessage") {
-        const text = textFromUserItem(item);
-        if (text.length > 0) {
+        const text = textFromUserItem(item, options.preserveWhitespace);
+        if (text.trim().length > 0) {
           messages.push({
             role: "user",
             text,
@@ -166,8 +166,8 @@ export function extractVisibleMessages(snapshot: SourceSnapshot): NormalizedMess
           });
         }
       } else if (item.type === "agentMessage" && typeof item.text === "string") {
-        const text = item.text.trim();
-        if (text.length > 0) {
+        const text = options.preserveWhitespace ? item.text : item.text.trim();
+        if (text.trim().length > 0) {
           messages.push({
             role: "assistant",
             text,
@@ -181,9 +181,9 @@ export function extractVisibleMessages(snapshot: SourceSnapshot): NormalizedMess
   return messages;
 }
 
-function textFromUserItem(item: CodexThreadItem): string {
+function textFromUserItem(item: CodexThreadItem, preserveWhitespace = false): string {
   if (!Array.isArray(item.content)) return "";
-  return item.content
+  const text = item.content
     .map((part) => {
       if (
         typeof part === "object" &&
@@ -196,8 +196,8 @@ function textFromUserItem(item: CodexThreadItem): string {
       return "";
     })
     .filter((text) => text.length > 0)
-    .join("\n")
-    .trim();
+    .join("\n");
+  return preserveWhitespace ? text : text.trim();
 }
 
 function extractLatestPlan(snapshot: SourceSnapshot): string | null {

@@ -10,7 +10,7 @@ import { stablePrettyJson } from "./util/stable-json.js";
 
 const USAGE = `Usage:
   ide-hub session list --source codex
-  ide-hub session migrate --source codex --target <qoder-international|qoder-cn|cursor|deepseek-harness|zcode> --thread <thread-id> [--dry-run]
+  ide-hub session migrate --source codex --target <qoder-international|qoder-cn|cursor|deepseek-harness|zcode|pi> --thread <thread-id> [--dry-run]
 
 The target workspace is always derived from the Codex thread cwd. There is no target cwd option.
 `;

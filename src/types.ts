@@ -12,14 +12,16 @@ export type MigrationTargetProduct =
   | QoderTargetProduct
   | CursorTargetProduct
   | DshTargetProduct
-  | "zcode";
+  | "zcode"
+  | "pi";
 export type CursorBundleId = "com.todesktop.230313mzl4w4u92";
 export type DshRuntimeId = "@deepseek-ai/dsh";
 export type MigrationTargetBundleId =
   | QoderBundleId
   | CursorBundleId
   | DshRuntimeId
-  | "dev.zcode.app";
+  | "dev.zcode.app"
+  | "@earendil-works/pi-coding-agent";
 
 export type MigrationRequest = {
   sourceProduct: "codex";

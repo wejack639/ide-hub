@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld(
     scan: () => ipcRenderer.invoke("ide-hub:scan"),
     prepareDsh: () => ipcRenderer.invoke("ide-hub:prepare-dsh"),
     previewZcode: (sourceThreadId) => ipcRenderer.invoke("ide-hub:preview-zcode", String(sourceThreadId)),
+    previewPi: (sourceThreadId) => ipcRenderer.invoke("ide-hub:preview-pi", String(sourceThreadId)),
     migrate: (sourceThreadId, targetProduct) =>
       ipcRenderer.invoke(
         "ide-hub:migrate",

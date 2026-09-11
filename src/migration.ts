@@ -64,11 +64,13 @@ import { fingerprintFile, sha256Text } from "./util/fs.js";
 import { stableJson } from "./util/stable-json.js";
 import { resolveWorkspace } from "./workspace.js";
 import { migrateZcode } from "./zcode/migration.js";
+import { migratePi } from "./pi/migration.js";
+import { PI_PACKAGE } from "./pi/discovery.js";
 
 export async function runMigration(request: MigrationRequest): Promise<MigrationResult> {
   const migrationId = randomUUID();
   const artifacts = new MigrationArtifacts(migrationId);
-  const codex = new CodexAppServerClient({ networkDisabled: request.targetProduct === "zcode" && process.platform === "darwin" });
+  const codex = new CodexAppServerClient({ networkDisabled: ["zcode", "pi"].includes(request.targetProduct) && process.platform === "darwin" });
   await artifacts.initialize();
   await artifacts.appendJournal("CREATED", { migrationId });
   await artifacts.writeJson("request.json", request);
@@ -132,6 +134,22 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
       seedContextBytes: seed.bytes,
       lossReport: seed.lossReport,
     });
+    if (request.targetProduct === "pi") {
+      const mcpBefore = await computeMcpFingerprint(codex, workspace.workspaceCanonical, "pi");
+      await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
+      const target = await migratePi({ snapshot, artifacts, dryRun: request.dryRun });
+      const postConditions = await assertPostConditions(codex, metadata.path, sourceAfterRead, workspace.workspaceCanonical, mcpBefore, "pi");
+      await artifacts.appendJournal("POST_CONDITIONS_VERIFIED", postConditions);
+      const result = makeResult({ migrationId, status: request.dryRun ? "DRY_RUN" : "COMPLETED",
+        sourceThreadId: request.sourceThreadId, targetSessionId: target.targetSessionId,
+        workspace: workspace.workspaceCanonical, artifacts, sourceSnapshotSha256,
+        seed: { ...seed, lossReport: target.projection.lossReport },
+        projectionSha256: sha256Text(stableJson(target.projection)), projection: target.projection,
+        targetProduct: "pi", targetBundleId: PI_PACKAGE });
+      await artifacts.writeJson("target-result.json", result);
+      await artifacts.appendJournal(result.status, { targetSessionId: target.targetSessionId, reused: target.reused, continuationVerified: false });
+      return result;
+    }
     if (request.targetProduct === "zcode") {
       const mcpBefore = await computeMcpFingerprint(codex, workspace.workspaceCanonical, "zcode");
       await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
@@ -930,7 +948,7 @@ function makeResult(input: {
   sourceSnapshotSha256: string;
   seed: ReturnType<typeof buildSeedContext>;
   projectionSha256: string;
-  projection: Pick<ReturnType<typeof projectConversationToQoder>, "turns" | "projectedMessageCount">;
+  projection: { turns: unknown[]; projectedMessageCount: number };
   targetProduct: MigrationResult["continuation"]["product"];
   targetBundleId: MigrationResult["continuation"]["bundleId"];
 }): MigrationResult {

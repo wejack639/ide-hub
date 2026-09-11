@@ -5,6 +5,7 @@ import type { AppServerRequester } from "./codex/app-server-client.js";
 import type { McpFingerprint, MigrationTargetProduct } from "./types.js";
 import { readTextIfExists, sha256Text } from "./util/fs.js";
 import { stableJson } from "./util/stable-json.js";
+import { piAbsolutePath } from "./pi/discovery.js";
 
 type ConfigReadResponse = { config: Record<string, unknown> };
 
@@ -20,7 +21,9 @@ export async function computeMcpFingerprint(
   const codexMcp =
     codexConfig.config.mcp_servers ?? codexConfig.config.mcpServers ?? {};
   const targetMcp =
-    targetProduct === "cursor"
+    targetProduct === "pi"
+      ? await readPiConfigurationFingerprints(workspace)
+      : targetProduct === "cursor"
       ? await readEffectiveCursorMcp(workspace)
       : targetProduct === "deepseek-harness"
         ? await readEffectiveDshMcp()
@@ -37,6 +40,21 @@ export async function computeMcpFingerprint(
       stableJson({ codexSha256, targetProduct, targetSha256 }),
     ),
   };
+}
+
+/** Pi 核心不引入 MCP；只校验已有配置及凭据内容指纹，不输出/迁移配置正文。 */
+export async function readPiConfigurationFingerprints(workspace: string): Promise<Record<string, string | null>> {
+  const agentDir = piAbsolutePath(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi/agent"));
+  const codexRoot = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  const candidates = [join(codexRoot, "auth.json"), join(codexRoot, "config.toml"),
+    ...["settings.json", "models.json", "auth.json", "mcp.json"].map(file => join(agentDir, file)),
+    join(workspace, ".pi/settings.json"), join(workspace, ".pi/mcp.json"), join(workspace, ".mcp.json")];
+  const files: Record<string, string | null> = {};
+  for (const path of candidates) {
+    const content = await readTextIfExists(path);
+    files[path] = content === null ? null : sha256Text(content);
+  }
+  return files;
 }
 
 async function readEffectiveDshMcp(): Promise<Record<string, unknown>> {

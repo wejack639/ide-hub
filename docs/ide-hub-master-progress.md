@@ -3,7 +3,7 @@
 > 文档角色：项目唯一进度真相源（Single Source of Truth）<br>
 > 最后更新：2026-09-10<br>
 > 当前阶段：Phase 0 多目标会话 Gate 收尾 + 桌面 MVP 适配扩展<br>
-> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode 五个目标，但不代表全部连续性 Gate 通过。ZCode `3.10.2` 已完成离线原生迁移、重启后桌面打开、一轮真实上下文回复和续聊后幂等（13 条完整保留）；模型阻塞已解除，第二轮下一步验证因桌面控制 `cgWindowNotFound` 暂未完成。迁移本身不调用模型、不迁移或修改 MCP。
+> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode / Pi 六个目标，但不代表全部连续性 Gate 通过。Pi `0.85.1` 已完成禁网原生导入、同目录恢复、打包桌面入口，以及 GLM-5.3-Flash 真实续聊、重开和续聊后幂等；SESSION-MIG-006 全部 AC 通过。ZCode 的既有第二轮 Gate 状态未改变。迁移本身不调用模型、不迁移或修改 MCP。
 
 ## 1. 使用规则
 
@@ -39,6 +39,8 @@
 | Cursor 迁移 Spec | `DONE` | Codex → Cursor `3.18.9`；版本/Workbench 指纹锁定，A → canonical(A) |
 | DeepSeek Harness 迁移 Spec | `DONE` | Codex → DSH `0.1.0-rc.6`；版本/包指纹/bridge 协议锁定，A → canonical(A) |
 | ZCode 迁移 Spec | `DONE` | SESSION-MIG-005；ZCode 3.10.2 / CLI 0.16.5；原生 importedHistory 与同目录桌面任务 |
+| Pi 迁移 Spec | `DONE` | SESSION-MIG-006；官方 Pi 0.85.1 / JSONL v3 / SessionManager；A → A |
+| Pi 迁移实现 / 发布 Gate | `DONE` | Pi 0.85.1；禁网原生回读、桌面向导/打开、同目录 TUI 恢复与 pwd、GLM-5.3-Flash 实际 3 轮问答和重开通过；正式 UI 复跑保留 11 条上下文及相同文件 hash |
 | ZCode 迁移实现 / 发布 Gate | `BLOCKED` | AC-004 重启打开、AC-007 真实续聊后复跑通过；AC-005 第一轮旧事实验证通过，第二轮下一步因桌面控制无法捕捉窗口待补验，不是模型不可用 |
 | Phase 0 本地验证 | `IN_PROGRESS` | TypeScript 测试入口、请求/结果 Schema、Codex reader、原生轮次投影、journal 和测试已落地；CLI 仅为开发测试入口，不是用户入口 |
 | 本地桌面应用 | `DONE` | Electron 44.1.1 本地 `.app`；IDE Hub 自身无 HTTP 服务；正式原型层可扫描 DSH 并启用一次性本地 bridge |
@@ -54,6 +56,7 @@
 - 已有：[SESSION-MIG-003：Codex → Cursor](./specs/session-migration-003-codex-to-cursor.md)。
 - 已有：[SESSION-MIG-004：Codex → DeepSeek Harness](./specs/session-migration-004-codex-to-deepseek-harness.md)。
 - 已有：[SESSION-MIG-005：Codex → ZCode](./specs/session-migration-005-codex-to-zcode.md) 与 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
+- 已有：[SESSION-MIG-006：Codex → Pi](./specs/SESSION-MIG-006-spec.md) 与 [Pi 验收记录](./verification/session-migration-006-pi.md)。
 - `prototype/` 已从参考原型升级为正式 Electron 渲染层；`desktop/` 下旧的简化 HTML/CSS/JS 已删除。
 - 已有 TypeScript 核心、`schemas/`、`src/`、`test/` 和 `desktop/`；已打包 `release/IDE Hub-darwin-arm64/IDE Hub.app`。
 - 桌面壳直接调用 TypeScript 迁移核心，不启动 Web 服务；Tauri/Rust 方案已由当前 Electron 实现取代。
@@ -68,12 +71,14 @@
 | M1：Phase 0 本地可行性 Gate | `IN_PROGRESS` | Qoder 国际版、Cursor 和 DSH 连续性通过；断网与 Cursor 精确回滚尚未结束 | M0 |
 | M2：Phase 1 桌面 MVP | `IN_PROGRESS` | prototype 布局已正式落地；真实会话列表与 7 步迁移向导完成；ZIP、MCP、任务中心保留入口并标记未实现 | M1 |
 | M3：Phase 2 产品矩阵扩展 | `IN_PROGRESS` | DSH 目标发现与正式桌面入口完成；其他 source/target 待实施 | M2 |
-| M4：Phase 3 实验原生投影 | `IN_PROGRESS` | DSH rc.6 原生 seed plugin、版本锁和连续性 Gate 已通过；Pi 待实施 | M2 |
+| M4：Phase 3 实验原生投影 | `IN_PROGRESS` | DSH rc.6 原生 seed plugin、版本锁和连续性 Gate 已通过；Pi 基础文本 target 已实现，扩展事件投影仍待实施 | M2 |
 | M5：Phase 4 受控同步 | `WAITING` | 可选，尚未进入 | M2/M4 |
 
 ### 2.3 当前焦点
 
 当前 B3（SESSION-MIG-005）：Codex 负责 ZCode 同目录原生迁移。2026-09-10 已由实现方重启原生 IDE 并发送第一轮旧上下文问题，模型准确回答 Anneal/commit/选路/Goals 限制；复跑 `bcbe0c92...` 复用同一 Session，13 条记录逐条保留。下一动作是在桌面窗口可捕捉后，由实现方发送第二轮明确下一步并完成最后 UI 取证，不要求用户代测。具体证据见 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
+
+B4（SESSION-MIG-006）已完成：Codex → Pi 同目录原生迁移、禁网回读、正式打包向导、Pi TUI 列表/恢复和 pwd 通过。2026-09-10 按用户授权在 Pi 配置智谱官方 GLM-5.3-Flash，独立调用成功；实现方完成旧上下文问答、下一步及纠偏修订共 3 轮。原生退出重开和正式 UI 复跑 `bfe0aab3...` 保留同一 Session 的全部 11 条上下文消息，文件 hash 不变。AC-005/AC-007 阻塞解除，见 [Pi 验收记录](./verification/session-migration-006-pi.md)。Pi source、扩展事件投影、ZIP 和 MCP 仍是独立未完成任务。
 
 前序 DSH 结果保留：
 
@@ -253,7 +258,7 @@ MVP Gate：
 |---|---|---|
 | P2-01 | CodeBuddy source/target Adapter | `WAITING` |
 | P2-02 | ZCode source/MCP Adapter（原生 target 已由 P0-06E 实现） | `WAITING` |
-| P2-03 | Pi source/target SDK Adapter | `WAITING` |
+| P2-03 | Pi source/target SDK Adapter | `IN_PROGRESS`（Codex → Pi target 及真实连续性 Gate 已通过；Pi source 仍待实施） |
 | P2-04S | DeepSeek Harness source Adapter | `WAITING` |
 | P2-04T | DeepSeek Harness target discovery 与原生会话迁移 | `DONE` |
 | P2-04M | DeepSeek Harness Cordis MCP renderer（独立全局 MCP 任务） | `WAITING` |
@@ -298,6 +303,8 @@ MVP Gate：
 | 15 | P0-08D | `DONE` | migration `3f017f8c-e471-48a9-ab00-d1ea945efa4c` 创建目标 Session；真实第 22 轮正确承接历史；复跑 migration `6b46b3f0-c0de-436c-b19c-33ddc0c6018b` 复用同一 Session 并保留 381 个事件 |
 | 16 | SESSION-MIG-005 / P0-06E | `DONE` | ZCode 原生逐条导入、精确任务索引、版本锁、源/目标断网子进程、完整预览、桌面迁移与项目打开；正式 UI migration `cf701981-b819-4790-8c3d-08d6c3916cb9` 同目录回读 5 条；131 条原生长历史及中断恢复测试通过 |
 | 17 | P0-08E | `BLOCKED` | 模型已可用；实现方第一轮真实回复命中旧事实、重启打开通过；续聊后 migration `bcbe0c92-d7f4-4a1d-b73c-fd7b8ad2afff` 复用目标并保留 13 条记录，无 session/create。第二轮与回复 UI 补充取证受 cgWindowNotFound 阻塞 |
+| 18 | SESSION-MIG-006 / P2-03 target | `DONE` | Pi 0.85.1 完整 JSONL 原生导入、版本锁、同目录、离线回读和正式七步向导；UI migration `878da891-85d0-4901-812d-af6f7aeeb082` 实际迁入 5 条；原生 TUI 恢复与只读 pwd 验证 A |
+| 19 | SESSION-MIG-006 AC-005/AC-007 | `DONE` | 智谱官方 GLM-5.3-Flash 实际完成旧事实问答、下一步初稿和纠偏修订共 3 轮；原生重开及正式桌面复跑 `bfe0aab3...` 保留 15 个 entry / 11 条上下文，文件 hash `88300351...` 完全一致 |
 
 首个真实样本：
 
@@ -308,6 +315,7 @@ MVP Gate：
 | Cursor smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | Cursor `3.18.9` 原生历史、32-byte BlobID、leading system root、同工作区、原生回读、打开和实际下一轮通过；目标 session `c5bf5d0a-1ec4-4d95-a2a8-28530ea21c96` |
 | DSH smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a079cc-0137-78a2-b44c-8246d39f68fd` | paginated | DSH `0.1.0-rc.6` 原生 SessionEvent 历史、同 Workspace、原生回读、真实下一轮和续聊后幂等复跑通过；目标 session `session-idehub-116368030a2fa5a2a44915824725c5c1` |
 | ZCode smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | ZCode 3.10.2；目标 `sess_idehub_3d23d31cadaa63b5f29182b1a896d2181942c779243e901c9ade0f044d819f8a`；5 条迁移前缀、用户原有 6 条后缀、实现方实际新增 2 条问答全部在复跑后保留；第二轮待补 |
+| Pi smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | Pi 0.85.1；目标 `idehub-c51a145a91660a3cf7c301535697d7ab377c87233d5540d00b472e17c5a72e5b`；5 条迁入历史 + GLM-5.3-Flash 3 轮问答，原生重开和续聊后正式 UI 复跑通过 |
 | 兼容回归 | `/Users/domino/develop/IdeaProjects/temp` | `019ffe64-6259-7cc3-b567-3ac6425f7d6f` | legacy | reader 单测通过；未作为首个目标写入样本 |
 
 B0/B1/B2/B3 明确不做：
@@ -322,6 +330,8 @@ B0/B1/B2/B3 明确不做：
 ### 10.1 当前阻塞项
 
 Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外部阻塞，但精确失败回滚受当前版本缺少公开 delete-by-id 原生命令限制，仍作为未通过 Gate 管理。DSH rc.6 目标路径无当前阻塞；其他 DSH 版本继续由版本 Gate 禁止写入。
+
+Pi 模型阻塞已解除：按用户授权仅在 Pi 本机配置智谱官方 `glm-5.3-flash`，独立调用、原生真实问答、下一步修订、重开及续聊后正式桌面复跑全部通过。当前 Pi 0.85.1 target 无剩余外部阻塞；临时 Key 不进入 IDE Hub 或仓库，迁移仍不调用模型，其他 Pi 版本未开放写入。详见 [Pi 验收记录](./verification/session-migration-006-pi.md)。
 
 ZCode 模型阻塞已于 2026-09-10 解除，第一轮真实上下文回复与 AC-007 真实续聊后复跑通过。当前仅 AC-005 第二轮/回复 UI 补充取证受桌面控制阻塞：ZCode、访达均报 `cgWindowNotFound`，重连/重置控制会话仍未恢复；需保持 Mac 解锁且窗口可见后由实现方继续，不需要用户代发消息。IDE Hub 不需要 Key。另：2026-09-09 扫描发现 Cursor 已升级到 3.19.7，当前 3.18.9 适配正确拒绝写入，旧版本通过的历史 Gate 不能当作新版已兼容。
 
@@ -376,6 +386,10 @@ ZCode 模型阻塞已于 2026-09-10 解除，第一轮真实上下文回复与 A
 - Gate 失败：相关任务回到 `IN_PROGRESS`，不得通过降低完成定义直接标记 `DONE`。
 
 ## 13. 变更记录
+
+2026-09-10 补验 SESSION-MIG-006：按用户明确授权配置 Pi 的智谱官方 GLM-5.3-Flash，独立请求返回 `PI_GLM_OK`。实现方在同一迁移会话完成旧上下文问答和下一步；保留模型初稿擅加规则的记录，再追加修订，累计 3 轮。原生退出重开、正式打包桌面复跑 `bfe0aab3-f466-43cb-8eaa-857c741dc046` 通过，11 条上下文 / 15 个 entry 和 20815 bytes 目标文件 hash 全部保留；源及配置不变。53 项测试通过、1 项 ZCode 安装包测试未启用，类型检查与构建通过。AC-005/AC-007 改为 DONE；未改生产迁移代码，未提交。
+
+2026-09-10 实现 SESSION-MIG-006：Pi 官方 SDK 原生 JSONL v3 适配接入请求/schema、Electron IPC、prototype 完整预览/损失/写入计划/终端打开。131 条原生长历史、user-only、失败恢复与保留后缀测试通过；正式打包 UI 向 temp 同目录迁移 5 条历史，Pi TUI 实际展示、列表发现、恢复及 pwd 通过。模型不可用，AC-005 和真实模型问答后 AC-007 保留 BLOCKED；未提交。
 
 2026-09-10 补验 ZCode：原生 IDE 退出/重启后打开同一任务；实现方实际发送旧上下文问题并收到正确回复（正文 hash `3142a44e67971eefa8d847948fe03dffcb8894f11940ded67ed80b0a19ee9bfa`）；Electron 真进程复跑 `bcbe0c92...` 保留全部 13 条记录，无重新导入。AC-004/AC-007 通过，AC-005 第二轮因桌面控制故障待补。48 项测试与构建/类型检查通过；本轮未改生产迁移代码、未提交。
 

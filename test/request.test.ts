@@ -13,6 +13,7 @@ const valid = {
 };
 
 test("migration request accepts the implemented Codex target routes", () => {
+  assert.equal(validateMigrationRequest({ ...valid, targetProduct: "pi" }).targetProduct, "pi");
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "zcode" }).targetProduct, "zcode");
   assert.deepEqual(validateMigrationRequest(valid), valid);
   assert.deepEqual(
@@ -31,7 +32,7 @@ test("migration request accepts the implemented Codex target routes", () => {
 
 test("migration request rejects an unsupported target product", () => {
   assert.throws(
-    () => validateMigrationRequest({ ...valid, targetProduct: "pi" }),
+    () => validateMigrationRequest({ ...valid, targetProduct: "unsupported-product" }),
     (error: unknown) =>
       error instanceof MigrationError && error.code === "INVALID_REQUEST",
   );
@@ -67,6 +68,9 @@ test("migration schemas expose Cursor and DSH as native targets", async () => {
     ),
   );
   assert.ok(requestSchema.properties.targetProduct.enum.includes("cursor"));
+  assert.ok(requestSchema.properties.targetProduct.enum.includes("pi"));
+  assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("pi"));
+  assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("@earendil-works/pi-coding-agent"));
   assert.ok(requestSchema.properties.targetProduct.enum.includes("zcode"));
   assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("dev.zcode.app"));
   assert.ok(requestSchema.properties.targetProduct.enum.includes("deepseek-harness"));
