@@ -30,12 +30,14 @@ const outputPaths = await packager({
   out: join(projectRoot, "release"),
   overwrite: true,
   prune: true,
-  asar: { unpackDir: "{cursor-bridge,dsh-bridge,dist/src/pi}" },
+  asar: { unpackDir: "{cursor-bridge,dsh-bridge,dist/src/pi,dist/src/claude,node_modules/@anthropic-ai/claude-agent-sdk}" },
   appBundleId: "com.idehub.desktop",
   appVersion: "0.1.0",
   electronVersion,
   electronZipDir: dirname(entryPath(cachedZip)),
-  ignore: [/^\/(docs|release|schemas|src|test)(\/|$)/u],
+  // 离线回读只用 SDK JS，不打包其用于 query() 的另一份 Claude CLI。
+  ignore: [/^\/(docs|release|schemas|src|test|\.agent|\.agents|\.windsurf)(\/|$)/u,
+    /^\/node_modules\/@anthropic-ai\/claude-agent-sdk-(darwin|linux|win32)-/u],
 });
 
 console.log(outputPaths.join("\n"));

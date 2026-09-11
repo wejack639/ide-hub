@@ -6,6 +6,7 @@ import type { McpFingerprint, MigrationTargetProduct } from "./types.js";
 import { readTextIfExists, sha256Text } from "./util/fs.js";
 import { stableJson } from "./util/stable-json.js";
 import { piAbsolutePath } from "./pi/discovery.js";
+import { claudeConfigDirectory } from "./claude/discovery.js";
 
 type ConfigReadResponse = { config: Record<string, unknown> };
 
@@ -21,7 +22,9 @@ export async function computeMcpFingerprint(
   const codexMcp =
     codexConfig.config.mcp_servers ?? codexConfig.config.mcpServers ?? {};
   const targetMcp =
-    targetProduct === "pi"
+    targetProduct === "claude-code"
+      ? await readClaudeConfigurationFingerprints(workspace)
+      : targetProduct === "pi"
       ? await readPiConfigurationFingerprints(workspace)
       : targetProduct === "cursor"
       ? await readEffectiveCursorMcp(workspace)
@@ -40,6 +43,20 @@ export async function computeMcpFingerprint(
       stableJson({ codexSha256, targetProduct, targetSha256 }),
     ),
   };
+}
+
+/** Claude 只核对配置指纹；不读取或复制认证正文到迁移产物。 */
+export async function readClaudeConfigurationFingerprints(workspace: string): Promise<Record<string, string | null>> {
+  const configDir = claudeConfigDirectory();
+  const candidates = [join(homedir(), ".claude.json"), join(configDir, ".claude.json"),
+    join(configDir, "settings.json"), join(configDir, "settings.local.json"),
+    join(workspace, ".mcp.json"), join(workspace, ".claude/settings.json"), join(workspace, ".claude/settings.local.json")];
+  const files: Record<string, string | null> = {};
+  for (const path of new Set(candidates)) {
+    const content = await readTextIfExists(path);
+    files[path] = content === null ? null : sha256Text(content);
+  }
+  return files;
 }
 
 /** Pi 核心不引入 MCP；只校验已有配置及凭据内容指纹，不输出/迁移配置正文。 */

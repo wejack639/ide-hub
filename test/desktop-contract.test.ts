@@ -28,6 +28,16 @@ test("desktop shell uses the prototype renderer and exposes a narrow IPC bridge"
   assert.match(main, /inspectZcode/u);
   assert.match(main, /preview-zcode/u);
   assert.match(main, /inspectPi/u);
+  assert.match(main, /inspectClaude/u);
+  assert.match(main, /preview-claude/u);
+  assert.match(main, /resolveClaudeTarget/u);
+  assert.match(renderer, /window\.ideHub\.previewClaude/u);
+  assert.match(preload, /previewClaude:/u);
+  assert.match(preload, /rollbackClaude:/u);
+  assert.match(renderer, /projection\.lossReport\.omittedEventTypes/u);
+  assert.doesNotMatch(renderer, /omittedNonTextItems/u);
+  assert.match(renderer, /在终端中打开 Claude Code 会话/u);
+  assert.match(html, /data-target="claude-code">\s*<span[^>]*>Claude Code<\/span>\s*<span[^>]*>原生历史 · 已实现/u);
   assert.match(main, /preview-pi/u);
   assert.match(renderer, /window\.ideHub\.previewPi/u);
   assert.match(preload, /previewPi:/u);

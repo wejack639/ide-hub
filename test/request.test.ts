@@ -13,6 +13,7 @@ const valid = {
 };
 
 test("migration request accepts the implemented Codex target routes", () => {
+  assert.equal(validateMigrationRequest({ ...valid, targetProduct: "claude-code" }).targetProduct, "claude-code");
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "pi" }).targetProduct, "pi");
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "zcode" }).targetProduct, "zcode");
   assert.deepEqual(validateMigrationRequest(valid), valid);
@@ -68,6 +69,9 @@ test("migration schemas expose Cursor and DSH as native targets", async () => {
     ),
   );
   assert.ok(requestSchema.properties.targetProduct.enum.includes("cursor"));
+  assert.ok(requestSchema.properties.targetProduct.enum.includes("claude-code"));
+  assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("claude-code"));
+  assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("@anthropic-ai/claude-code"));
   assert.ok(requestSchema.properties.targetProduct.enum.includes("pi"));
   assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("pi"));
   assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("@earendil-works/pi-coding-agent"));

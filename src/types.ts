@@ -13,7 +13,8 @@ export type MigrationTargetProduct =
   | CursorTargetProduct
   | DshTargetProduct
   | "zcode"
-  | "pi";
+  | "pi"
+  | "claude-code";
 export type CursorBundleId = "com.todesktop.230313mzl4w4u92";
 export type DshRuntimeId = "@deepseek-ai/dsh";
 export type MigrationTargetBundleId =
@@ -21,7 +22,8 @@ export type MigrationTargetBundleId =
   | CursorBundleId
   | DshRuntimeId
   | "dev.zcode.app"
-  | "@earendil-works/pi-coding-agent";
+  | "@earendil-works/pi-coding-agent"
+  | "@anthropic-ai/claude-code";
 
 export type MigrationRequest = {
   sourceProduct: "codex";

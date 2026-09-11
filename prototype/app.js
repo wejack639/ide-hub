@@ -17,6 +17,7 @@ const PRODUCT_META = {
 
 const PRODUCT_ORDER = ["codex", "qoder", "qodercn", "cursor", "claude", "codebuddy", "dsh", "zcode", "pi"];
 const MIGRATION_TARGETS = {
+  "claude-code": { productId: "claude", stateKey: "claude", name: "Claude Code" },
   pi: { productId: "pi", stateKey: "pi", name: "Pi" },
   zcode: { productId: "zcode", stateKey: "zcode", name: "ZCode" },
   "qoder-international": {
@@ -60,6 +61,9 @@ const state = {
   pi: null,
   piPreview: null,
   piPreviewGeneration: 0,
+  claude: null,
+  claudePreview: null,
+  claudePreviewGeneration: 0,
   current: null,
   selected: new Set(),
   search: "",
@@ -88,6 +92,7 @@ function defaultMigrationTarget() {
   if (state.cursor?.installed && state.cursor?.compatible) return "cursor";
   if (state.zcode?.installed && state.zcode?.compatible) return "zcode";
   if (state.pi?.installed && state.pi?.compatible) return "pi";
+  if (state.claude?.installed && state.claude?.compatible) return "claude-code";
   if (state.dsh?.installed && state.dsh?.compatible && state.dsh?.bridgeCompatible) {
     return "deepseek-harness";
   }
@@ -195,6 +200,11 @@ function renderProducts() {
       return { id, version: state.pi?.version ?? "未安装",
         note: state.pi?.compatible ? "JSONL v3 原生历史 · 终端续聊" : state.pi?.compatibilityError ?? "未发现 Pi",
         status: state.pi?.compatible ? "ok" : "warn" };
+    }
+    if (id === "claude") {
+      return { id, version: state.claude?.version ?? "未安装",
+        note: state.claude?.compatible ? "原生 JSONL 历史 · 终端续聊" : state.claude?.compatibilityError ?? "未发现 Claude Code",
+        status: state.claude?.compatible ? "ok" : "warn" };
     }
     if (id === "zcode") {
       return { id, version: state.zcode?.version ?? "未安装",
@@ -345,6 +355,7 @@ function renderDetail() {
   const canMigrateCursor = thread.migratable && state.cursor?.installed && state.cursor?.compatible && !state.migrating;
   const canMigrateZcode = thread.migratable && state.zcode?.compatible && !state.migrating;
   const canMigratePi = thread.migratable && state.pi?.compatible && !state.migrating;
+  const canMigrateClaude = thread.migratable && state.claude?.compatible && !state.migrating;
   const canMigrateDsh = thread.migratable
     && state.dsh?.installed
     && state.dsh?.compatible
@@ -412,6 +423,7 @@ function renderDetail() {
       <div class="muted-note">${dshStatus}</div>
       <div class="muted-note">${esc(state.zcode?.compatible ? `ZCode ${state.zcode.version} 原生导入已就绪` : state.zcode?.compatibilityError ?? "未发现 ZCode")}</div>
       <div class="muted-note">${esc(state.pi?.compatible ? `Pi ${state.pi.version} · 原生历史 / 终端续聊` : state.pi?.compatibilityError ?? "未发现 Pi")}</div>
+      <div class="muted-note">${esc(state.claude?.compatible ? `Claude Code ${state.claude.version} · 原生历史 / 终端续聊` : state.claude?.compatibilityError ?? "未发现 Claude Code")}</div>
     </div>
     <div class="detail-sec">
       <div class="ds-label">迁移边界</div>
@@ -426,6 +438,7 @@ function renderDetail() {
       <button class="btn btn-ghost" id="detailMigrateCursor" ${canMigrateCursor ? "" : "disabled"}>迁移到 Cursor…</button>
       <button class="btn btn-ghost" id="detailMigrateZcode" ${canMigrateZcode ? "" : "disabled"}>迁移到 ZCode…</button>
       <button class="btn btn-ghost" id="detailMigratePi" ${canMigratePi ? "" : "disabled"}>迁移到 Pi…</button>
+      <button class="btn btn-ghost" id="detailMigrateClaude" ${canMigrateClaude ? "" : "disabled"}>迁移到 Claude Code…</button>
       ${canPrepareDsh
         ? '<button class="btn btn-ghost" id="detailPrepareDsh">启用 DSH 本地迁移桥…</button>'
         : `<button class="btn btn-ghost" id="detailMigrateDsh" ${canMigrateDsh ? "" : "disabled"}>迁移到 DeepSeek Harness…</button>`}
@@ -436,6 +449,7 @@ function renderDetail() {
   $("#detailMigrateCursor").addEventListener("click", () => openMigration(thread, "cursor"));
   $("#detailMigrateZcode").addEventListener("click", () => openMigration(thread, "zcode"));
   $("#detailMigratePi").addEventListener("click", () => openMigration(thread, "pi"));
+  $("#detailMigrateClaude").addEventListener("click", () => openMigration(thread, "claude-code"));
   $("#detailPrepareDsh")?.addEventListener("click", () => void prepareDshBridge());
   $("#detailMigrateDsh")?.addEventListener("click", () => openMigration(thread, "deepseek-harness"));
   $("#detailExport").addEventListener("click", () => openStubWizard("ovExport"));
@@ -493,6 +507,8 @@ function openMigration(thread = chosenThread(), requestedTarget = null) {
   state.zcodePreview = null;
   state.piPreview = null;
   state.piPreviewGeneration += 1;
+  state.claudePreview = null;
+  state.claudePreviewGeneration += 1;
   state.migrationStep = 1;
   state.migrationVisited = new Set([1]);
   state.migrationStarted = false;
@@ -513,6 +529,7 @@ function renderMigrationContext(thread) {
   const isDsh = state.migrationTarget === "deepseek-harness";
   const isZcode = state.migrationTarget === "zcode";
   const isPi = state.migrationTarget === "pi";
+  const isClaude = state.migrationTarget === "claude-code";
   $(".wiz-sub", overlay).textContent = `Codex → ${target.name} · 原生 User / Assistant 历史`;
   const status = statusOf(thread);
   const first = $('[data-pane="1"]', overlay);
@@ -563,6 +580,7 @@ function renderMigrationContext(thread) {
     card.onclick = available
       ? () => {
         state.migrationTarget = card.dataset.target;
+        $("#migConfirm").checked = false;
         renderMigrationContext(thread);
         goMigrationStep(state.migrationStep);
       }
@@ -579,15 +597,17 @@ function renderMigrationContext(thread) {
     card.classList.toggle("selected", implemented);
     card.classList.toggle("disabled", !implemented);
     if (implemented) {
-      $(".rcard-head", card).textContent = isZcode || isPi ? "完整原生历史" : "标准";
-      $(".rcard-desc", card).textContent = isZcode || isPi
+      $(".rcard-head", card).textContent = isZcode || isPi || isClaude ? "完整原生历史" : "标准";
+      $(".rcard-desc", card).textContent = isZcode || isPi || isClaude
         ? "全部可见消息 · 保留原顺序与独立角色"
         : "Handoff + 最近 N 轮 + 关键证据";
     }
   });
   const targetNotes = $$('[data-pane="2"] .muted-note', overlay);
   targetNotes[0].textContent = `目标路径不可修改：${target.name} 会话固定创建在源会话的同一工作区。`;
-  targetNotes[1].textContent = isPi
+  targetNotes[1].textContent = isClaude
+    ? `Claude Code ${installation.version} · 新建独立原生 JSONL；迁移无需 Key。在终端按确切 ID 恢复，不是 Claude Desktop 或 IDE 扩展。`
+    : isPi
     ? `Pi ${installation.version} · SessionManager / JSONL v3；迁移不调用模型。结果入口在终端打开确切会话，不需要手工复制历史。`
     : isCursor
     ? `当前目标使用 ${installation.bundleId} · Cursor ${installation.version} · Chat JSON v1；本地桥只调用 IDE 内置导入，不安装 Agent CLI。`
@@ -635,6 +655,7 @@ function renderMigrationContext(thread) {
 function goMigrationStep(step) {
   if (!state.migrationThread || step < 1 || step > MIGRATION_STEPS.length) return;
   if (step === 7 && state.migrationTarget === "pi" && (!state.piPreview || !$("#migConfirm").checked)) return;
+  if (step === 7 && state.migrationTarget === "claude-code" && (!state.claudePreview || !$("#migConfirm").checked)) return;
   state.migrationStep = step;
   state.migrationVisited.add(step);
   const overlay = $("#ovMigration");
@@ -658,6 +679,10 @@ function goMigrationStep(step) {
   if (state.migrationTarget === "pi" && step >= 4 && step <= 6) {
     next.disabled = true;
     void loadPiPreview();
+  }
+  if (state.migrationTarget === "claude-code" && step >= 4 && step <= 6) {
+    next.disabled = true;
+    void loadClaudePreview();
   }
   if (step === 3) renderSourceChecks();
   if (step === 7 && !state.migrationStarted) void executeMigration();
@@ -694,6 +719,37 @@ async function loadPiPreview() {
   $('#ovMigration [data-pane="6"] .ops').innerHTML = `<div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>${esc(plan.sessionPath)}</code><div class="op-sub">Pi ${esc(plan.version)} · header cwd = ${esc(result.workspace)}；失败记录可恢复，不覆盖其他会话</div></div></div>
     <div class="op-row"><span class="op-badge b-conf">不修改</span><div class="op-main">Codex 源会话、MCP、模型和账号配置</div></div>
     <div class="banner banner-info">导入后在终端中打开 Pi 会话。实际发送消息使用 Pi 已配置模型；迁移完成不表示已验证真实续聊。</div>`;
+  $('#ovMigration [data-wiz-next]').disabled = state.migrationStep === 6 && !$("#migConfirm").checked;
+}
+
+async function loadClaudePreview() {
+  const thread = state.migrationThread;
+  const generation = state.claudePreviewGeneration;
+  const pane = $('#ovMigration [data-pane="4"]');
+  if (!state.claudePreview) {
+    pane.innerHTML = '<h3 class="pane-title">正在离线读取 Claude Code 完整历史投影…</h3><p>预览不会创建目标目录或会话。</p>';
+    try {
+      const response = await window.ideHub.previewClaude(thread.id);
+      if (generation !== state.claudePreviewGeneration || state.migrationTarget !== "claude-code") return;
+      if (!response.ok) throw response.error;
+      state.claudePreview = response.data;
+    } catch (error) {
+      if (generation === state.claudePreviewGeneration && state.migrationTarget === "claude-code") pane.innerHTML = `<div class="banner banner-error">预览失败：${esc(normalizeError(error).message)}。返回上一步重试。</div>`;
+      return;
+    }
+  }
+  const { projection, result, plan } = state.claudePreview;
+  pane.innerHTML = `<h3 class="pane-title">Claude Code 完整原生历史 · ${projection.messages.length} 条</h3>
+    <p class="mono">${esc(result.workspace)} → 同一目录</p><div class="banner banner-info">${esc(projection.compatibilityNote)}</div>
+    ${projection.messages.map((m, i) => `<details class="card"><summary>${i + 1}. ${esc(m.role)} · ${esc(m.content.slice(0, 90))}</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(m.content)}</pre></details>`).join("")}`;
+  $('#ovMigration [data-pane="5"] tbody').innerHTML = `<tr><td>User / Assistant 正文</td><td>完整原生历史</td><td>${projection.messages.length} 条；不合并、不截断，不添加假回答</td></tr>
+    ${Object.entries(projection.lossReport.omittedEventTypes).map(([kind, count]) => `<tr><td>${esc(kind)}</td><td>不重放工具/附件</td><td>${count} 项，源记录保留在本地 Capsule</td></tr>`).join("")}
+    <tr><td>system / 隐藏推理</td><td>不复制</td><td>由 Claude Code 构建当前运行上下文</td></tr>
+    <tr><td>MCP / 模型 / 账号</td><td>不迁移、不修改</td><td>导入无需 Key；续聊使用 Claude Code 现有配置</td></tr>`;
+  $('#ovMigration [data-pane="6"] .pane-sub').textContent = "完整 JSONL 独占发布；逐行/父子链与官方磁盘回读通过后才报告导入成功。重复迁移保留新增聊天，失败可按记录重试恢复。";
+  $('#ovMigration [data-pane="6"] .ops').innerHTML = `<div class="op-row"><span class="op-badge b-create">新建/复用</span><div class="op-main"><code>${esc(plan.sessionPath)}</code><div class="op-sub">Claude Code ${esc(plan.version)} · cwd = ${esc(result.workspace)}；只涉及本次独立 Session ID</div></div></div>
+    <div class="op-row"><span class="op-badge b-conf">不修改</span><div class="op-main">Codex 源会话、既有 Claude 会话、MCP、模型和认证配置</div></div>
+    <div class="banner banner-info">在终端中打开 Claude Code 会话。迁移过程不发送模型消息，真实续聊未由本次迁移验证；无模型也可导入。</div>`;
   $('#ovMigration [data-wiz-next]').disabled = state.migrationStep === 6 && !$("#migConfirm").checked;
 }
 
@@ -751,7 +807,7 @@ function renderMigrationTimeline(mode = "running") {
     "只读读取 Codex 源会话并复核源文件",
     "生成 source snapshot、Capsule 与会话投影",
     `在相同工作区创建 ${target.name} 原生会话`,
-    "逐轮回读正文并验证 Chat History 可见",
+    state.migrationTarget === "claude-code" ? "严格校验全部记录，并通过官方磁盘列表/消息回读" : "逐轮回读正文并验证 Chat History 可见",
     "复核 Codex 源文件与 MCP 指纹",
   ];
   $("#migTimeline").innerHTML = labels.map((label, index) => {
@@ -793,7 +849,9 @@ function renderMigrationResult(result) {
   const container = $("#migResult");
   const loss = result.details.lossReport;
   const target = migrationTarget(result.continuation.product);
-  const continuationHelp = result.continuation.product === "pi"
+  const continuationHelp = result.continuation.product === "claude-code"
+    ? "Claude Code 原生历史已导入，完整载荷与官方磁盘列表/消息回读通过。按钮会从同一工作区在终端按确切 Session ID 恢复；也可用 /resume 查找 Codex 标题。这不是 Claude Desktop 或 IDE 扩展入口。历史模型标识仅表示 Codex 来源；续聊使用 Claude Code 自己的模型和认证。本次迁移不发送测试消息，真实续聊尚未验证。"
+    : result.continuation.product === "pi"
     ? "Pi 原生历史已落盘、重开和列表回读。在终端中打开 Pi 会话后，可用 /resume 查找 Codex 标题。历史 provider ide-hub/codex-history 是导入标识，Pi 会使用自己的模型；无需为此标识配置 provider。真实续聊未由本次迁移验证；如无模型，请在 Pi /login 或 /model 配置。"
     : result.continuation.product === "cursor"
     ? `已按目标 Session ID 请求 Cursor 打开该原生会话；也可从 Chat History 中按“Codex · …”标题找到它。`
@@ -821,12 +879,23 @@ function renderMigrationResult(result) {
     </div>
     <div class="banner banner-info result-help">${esc(continuationHelp)}</div>
     <div class="result-actions">
-      <button class="btn btn-primary" id="migOpenTarget">${result.continuation.product === "pi" ? "在终端中打开 Pi 会话" : `打开 ${esc(target.name)} 工作区`}</button>
+      <button class="btn btn-primary" id="migOpenTarget">${result.continuation.product === "claude-code" ? "在终端中打开 Claude Code 会话" : result.continuation.product === "pi" ? "在终端中打开 Pi 会话" : `打开 ${esc(target.name)} 工作区`}</button>
       <button class="btn btn-ghost" data-real-close>关闭向导</button>
-      <button class="btn btn-danger-ghost" disabled>回滚（未实现）</button>
+      ${result.continuation.product === "claude-code" ? '<button class="btn btn-danger-ghost" id="migRollbackClaude">回滚本次导入…</button>' : '<button class="btn btn-danger-ghost" disabled>回滚（未实现）</button>'}
     </div>`;
   $("#migOpenTarget").addEventListener("click", () => void openTarget(result.workspace, result.continuation.product, result.targetSessionId));
   $("[data-real-close]", container).addEventListener("click", closeMigration);
+  $("#migRollbackClaude")?.addEventListener("click", async () => {
+    if (!window.confirm("仅删除本次 Claude Code 导入的会话。已有新增聊天或改动会拒绝回滚，源会话及归档不删除。确定？")) return;
+    try {
+      const response = await window.ideHub.rollbackClaude(result.workspace, result.targetSessionId);
+      if (!response.ok) throw response.error;
+      state.lastResult = null;
+      closeMigration();
+      renderDetail();
+      toast("已删除本次未续聊目标；源会话、其他会话及 Hub 归档保留，可重新迁移", "ok");
+    } catch (error) { toast(normalizeError(error).message, "warn"); }
+  });
 }
 
 function renderMigrationError(error) {
@@ -960,6 +1029,7 @@ async function scan() {
     state.dsh = response.data.dsh;
     state.zcode = response.data.zcode;
     state.pi = response.data.pi;
+    state.claude = response.data.claude;
     const stillExists = state.threads.some((thread) => thread.id === state.current);
     if (!stillExists) state.current = state.threads[0]?.id ?? null;
     state.selected = new Set([...state.selected].filter((id) => state.threads.some((thread) => thread.id === id)));
@@ -973,6 +1043,7 @@ async function scan() {
     state.dsh = null;
     state.zcode = null;
     state.pi = null;
+    state.claude = null;
     state.current = null;
     toast(`扫描失败：${error.message}`, "warn");
   } finally {
@@ -1030,12 +1101,13 @@ function bindEvents() {
     }
     if (state.migrationTarget === "zcode" && state.migrationStep >= 4 && !state.zcodePreview) return;
     if (state.migrationTarget === "pi" && state.migrationStep >= 4 && !state.piPreview) return;
+    if (state.migrationTarget === "claude-code" && state.migrationStep >= 4 && !state.claudePreview) return;
     goMigrationStep(state.migrationStep + 1);
   });
   $("[data-wiz-prev]", migrationOverlay).addEventListener("click", () => goMigrationStep(state.migrationStep - 1));
   $$("[data-wiz-close]", migrationOverlay).forEach((button) => button.addEventListener("click", closeMigration));
   $("#migConfirm").addEventListener("change", () => {
-    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview) || (state.migrationTarget === "pi" && !state.piPreview);
+    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview) || (state.migrationTarget === "pi" && !state.piPreview) || (state.migrationTarget === "claude-code" && !state.claudePreview);
   });
 
   for (const id of Object.keys(STUB_WIZARDS)) {

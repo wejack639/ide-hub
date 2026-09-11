@@ -66,11 +66,13 @@ import { resolveWorkspace } from "./workspace.js";
 import { migrateZcode } from "./zcode/migration.js";
 import { migratePi } from "./pi/migration.js";
 import { PI_PACKAGE } from "./pi/discovery.js";
+import { migrateClaude } from "./claude/migration.js";
+import { CLAUDE_RUNTIME_ID } from "./claude/discovery.js";
 
 export async function runMigration(request: MigrationRequest): Promise<MigrationResult> {
   const migrationId = randomUUID();
   const artifacts = new MigrationArtifacts(migrationId);
-  const codex = new CodexAppServerClient({ networkDisabled: ["zcode", "pi"].includes(request.targetProduct) && process.platform === "darwin" });
+  const codex = new CodexAppServerClient({ networkDisabled: ["zcode", "pi", "claude-code"].includes(request.targetProduct) && process.platform === "darwin" });
   await artifacts.initialize();
   await artifacts.appendJournal("CREATED", { migrationId });
   await artifacts.writeJson("request.json", request);
@@ -134,6 +136,22 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
       seedContextBytes: seed.bytes,
       lossReport: seed.lossReport,
     });
+    if (request.targetProduct === "claude-code") {
+      const mcpBefore = await computeMcpFingerprint(codex, workspace.workspaceCanonical, "claude-code");
+      await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
+      const target = await migrateClaude({ snapshot, artifacts, dryRun: request.dryRun });
+      const postConditions = await assertPostConditions(codex, metadata.path, sourceAfterRead, workspace.workspaceCanonical, mcpBefore, "claude-code");
+      await artifacts.appendJournal("POST_CONDITIONS_VERIFIED", postConditions);
+      const result = makeResult({ migrationId, status: request.dryRun ? "DRY_RUN" : "COMPLETED",
+        sourceThreadId: request.sourceThreadId, targetSessionId: target.targetSessionId,
+        workspace: workspace.workspaceCanonical, artifacts, sourceSnapshotSha256,
+        seed: { ...seed, lossReport: target.projection.lossReport },
+        projectionSha256: sha256Text(stableJson(target.projection)), projection: target.projection,
+        targetProduct: "claude-code", targetBundleId: CLAUDE_RUNTIME_ID });
+      await artifacts.writeJson("target-result.json", result);
+      await artifacts.appendJournal(result.status, { targetSessionId: target.targetSessionId, reused: target.reused, continuationVerified: false });
+      return result;
+    }
     if (request.targetProduct === "pi") {
       const mcpBefore = await computeMcpFingerprint(codex, workspace.workspaceCanonical, "pi");
       await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);

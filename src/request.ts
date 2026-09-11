@@ -30,11 +30,12 @@ export function validateMigrationRequest(value: unknown): MigrationRequest {
     request.targetProduct !== "cursor" &&
     request.targetProduct !== "deepseek-harness" &&
     request.targetProduct !== "zcode" &&
-    request.targetProduct !== "pi"
+    request.targetProduct !== "pi" &&
+    request.targetProduct !== "claude-code"
   ) {
     throw new MigrationError(
       "INVALID_REQUEST",
-      "targetProduct must be qoder-international, qoder-cn, cursor, deepseek-harness, zcode, or pi",
+      "targetProduct must be qoder-international, qoder-cn, cursor, deepseek-harness, zcode, pi, or claude-code",
     );
   }
   if (typeof request.sourceThreadId !== "string" || request.sourceThreadId.length === 0) {

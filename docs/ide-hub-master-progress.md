@@ -1,9 +1,9 @@
 # IDE Hub 任务进度总控
 
 > 文档角色：项目唯一进度真相源（Single Source of Truth）<br>
-> 最后更新：2026-09-10<br>
+> 最后更新：2026-09-11<br>
 > 当前阶段：Phase 0 多目标会话 Gate 收尾 + 桌面 MVP 适配扩展<br>
-> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode / Pi 六个目标，但不代表全部连续性 Gate 通过。Pi `0.85.1` 已完成禁网原生导入、同目录恢复、打包桌面入口，以及 GLM-5.3-Flash 真实续聊、重开和续聊后幂等；SESSION-MIG-006 全部 AC 通过。ZCode 的既有第二轮 Gate 状态未改变。迁移本身不调用模型、不迁移或修改 MCP。
+> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode / Pi / Claude Code 七个目标，但不代表所有新版和入口已支持。Claude Code 的普通 TUI 登录阻塞已解除：2.1.170、2.1.268 分别两轮真实续聊、pwd、退出重开通过，未改 Key/模型/CCSwitch；2.1.170 已验证基线 AC-001～007 完成。本机默认 CLI 已变为 2.1.268，现有 writer 仍锁定 2.1.170，新版新迁移/正式桌面适配待完成，不把已有会话续聊成功当作新版本导入已支持。Pi/ZCode 既有状态不变。迁移本身不调用模型、不迁移或修改 MCP。
 
 ## 1. 使用规则
 
@@ -40,6 +40,8 @@
 | DeepSeek Harness 迁移 Spec | `DONE` | Codex → DSH `0.1.0-rc.6`；版本/包指纹/bridge 协议锁定，A → canonical(A) |
 | ZCode 迁移 Spec | `DONE` | SESSION-MIG-005；ZCode 3.10.2 / CLI 0.16.5；原生 importedHistory 与同目录桌面任务 |
 | Pi 迁移 Spec | `DONE` | SESSION-MIG-006；官方 Pi 0.85.1 / JSONL v3 / SessionManager；A → A |
+| Claude Code 迁移 Spec | `DONE` | SESSION-MIG-007 v2；用户 DEC-001 批准新建独立原生 JSONL；A → A |
+| Claude Code 迁移实现 / 发布 Gate | `IN_PROGRESS` | 2.1.170 基线 AC-001～007 完成，普通 TUI 真实续聊/重开已通过；本机默认 2.1.268 的旧会话续聊也通过，但新迁移/正式桌面仍被版本校验拒绝，待新版适配 |
 | Pi 迁移实现 / 发布 Gate | `DONE` | Pi 0.85.1；禁网原生回读、桌面向导/打开、同目录 TUI 恢复与 pwd、GLM-5.3-Flash 实际 3 轮问答和重开通过；正式 UI 复跑保留 11 条上下文及相同文件 hash |
 | ZCode 迁移实现 / 发布 Gate | `BLOCKED` | AC-004 重启打开、AC-007 真实续聊后复跑通过；AC-005 第一轮旧事实验证通过，第二轮下一步因桌面控制无法捕捉窗口待补验，不是模型不可用 |
 | Phase 0 本地验证 | `IN_PROGRESS` | TypeScript 测试入口、请求/结果 Schema、Codex reader、原生轮次投影、journal 和测试已落地；CLI 仅为开发测试入口，不是用户入口 |
@@ -57,6 +59,7 @@
 - 已有：[SESSION-MIG-004：Codex → DeepSeek Harness](./specs/session-migration-004-codex-to-deepseek-harness.md)。
 - 已有：[SESSION-MIG-005：Codex → ZCode](./specs/session-migration-005-codex-to-zcode.md) 与 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
 - 已有：[SESSION-MIG-006：Codex → Pi](./specs/SESSION-MIG-006-spec.md) 与 [Pi 验收记录](./verification/session-migration-006-pi.md)。
+- 已有：[SESSION-MIG-007：Codex → Claude Code](./specs/SESSION-MIG-007-spec.md) 与 [Claude Code 验收记录](./verification/session-migration-007-claude-code.md)。
 - `prototype/` 已从参考原型升级为正式 Electron 渲染层；`desktop/` 下旧的简化 HTML/CSS/JS 已删除。
 - 已有 TypeScript 核心、`schemas/`、`src/`、`test/` 和 `desktop/`；已打包 `release/IDE Hub-darwin-arm64/IDE Hub.app`。
 - 桌面壳直接调用 TypeScript 迁移核心，不启动 Web 服务；Tauri/Rust 方案已由当前 Electron 实现取代。
@@ -75,6 +78,8 @@
 | M5：Phase 4 受控同步 | `WAITING` | 可选，尚未进入 | M2/M4 |
 
 ### 2.3 当前焦点
+
+B5（SESSION-MIG-007）：Claude Code 2.1.170 原生 JSONL 迁移已接入正式桌面。2026-09-11 补验沿用 CCSwitch 的 `deepseekv4.1flash`，不改 Key/模型；2.1.170 与当前默认 2.1.268 的普通 TUI 各完成两轮旧事实问答/下一步和 Bash pwd，退出重开成功。原始 5 条正文、同 ID/同 A 保留；本轮真实核心复跑 `4bf308a2...` 的完整 hash `45bedda3...` 前后一致，40 条原生消息回读通过。AC-004/005 登录阻塞解除，2.1.170 基线 AC-001～007 完成。默认新版 2.1.268 仍未进入 writer 兼容名单，需另验新版新建历史与正式桌面链路；本次未降级、未放宽版本检查。
 
 当前 B3（SESSION-MIG-005）：Codex 负责 ZCode 同目录原生迁移。2026-09-10 已由实现方重启原生 IDE 并发送第一轮旧上下文问题，模型准确回答 Anneal/commit/选路/Goals 限制；复跑 `bcbe0c92...` 复用同一 Session，13 条记录逐条保留。下一动作是在桌面窗口可捕捉后，由实现方发送第二轮明确下一步并完成最后 UI 取证，不要求用户代测。具体证据见 [ZCode 验收记录](./verification/session-migration-005-zcode.md)。
 
@@ -239,7 +244,7 @@ P0-02 细分验收：
 | P1-06 | MCP 独立配置包 UI | `WAITING` | P1-05 | 导入/导出一次，不包含会话 |
 | P1-07 | Context Bridge 全局安装 | `WAITING` | P1-01/P0-08 | 每个目标产品配置一次；工具接收 `migrationId` |
 | P1-08 | Claude Code/Cursor source Adapter | `WAITING` | P0-04 | 真实只读 fixture 与契约测试 |
-| P1-09 | Codex/Qoder/Claude/Cursor/DSH target Adapter | `IN_PROGRESS` | P0-08 | Qoder 国际版/CN、Cursor 与 DSH target 已接入；Claude 及其余能力降级待实现 |
+| P1-09 | Codex/Qoder/Claude/Cursor/DSH target Adapter | `IN_PROGRESS` | P0-08 | Qoder 国际版/CN、Cursor、DSH 与 Claude Code target 已接入；Claude 2.1.170 普通 TUI 真实续聊和幂等通过，当前默认 2.1.268 新迁移适配及其余能力待实施 |
 | P1-10 | 任务中心 | `WAITING` | P1-03/P1-05 | 会话任务和 MCP 任务可区分、可独立回滚 |
 | P1-11 | macOS MVP 打包 | `IN_PROGRESS` | P1-01～P1-10 | arm64 `.app` 已本机打包并启动；签名、安装包、离线和两台电脑验收待完成 |
 
@@ -305,6 +310,10 @@ MVP Gate：
 | 17 | P0-08E | `BLOCKED` | 模型已可用；实现方第一轮真实回复命中旧事实、重启打开通过；续聊后 migration `bcbe0c92-d7f4-4a1d-b73c-fd7b8ad2afff` 复用目标并保留 13 条记录，无 session/create。第二轮与回复 UI 补充取证受 cgWindowNotFound 阻塞 |
 | 18 | SESSION-MIG-006 / P2-03 target | `DONE` | Pi 0.85.1 完整 JSONL 原生导入、版本锁、同目录、离线回读和正式七步向导；UI migration `878da891-85d0-4901-812d-af6f7aeeb082` 实际迁入 5 条；原生 TUI 恢复与只读 pwd 验证 A |
 | 19 | SESSION-MIG-006 AC-005/AC-007 | `DONE` | 智谱官方 GLM-5.3-Flash 实际完成旧事实问答、下一步初稿和纠偏修订共 3 轮；原生重开及正式桌面复跑 `bfe0aab3...` 保留 15 个 entry / 11 条上下文，文件 hash `88300351...` 完全一致 |
+| 20 | SESSION-MIG-007 原生导入 / 桌面 / 恢复 | `DONE` | Claude Code 2.1.170，SDK 0.3.170；5 条真实正文、131 条隔离长历史、禁网、A → A、原生 picker/恢复、`!pwd`、正式桌面打开和独占发布/精确回滚通过 |
+| 21 | SESSION-MIG-007 原生 CLI print 连续性 / AC-007 | `DONE` | 不改 Key，沿用 CCSwitch / deepseekv4.1flash；两轮真实问答、工具 pwd、TUI 重开显示和 UI 复跑 `98f19990...` 保持相同文件 hash。此结果不代替普通 TUI 直接发送验收 |
+| 22 | SESSION-MIG-007 普通 TUI 直接发送 | `DONE` | 2.1.170、2.1.268 分别两轮真实续聊、Bash pwd、退出重开通过；沿用 CCSwitch，无 Key/模型配置改动；本轮核心复跑 `4bf308a2...` 保留 40 条回读消息和完整文件 hash |
+| 23 | SESSION-MIG-007 本机新版新迁移兼容 | `WAITING` | 默认 CLI 现为 2.1.268；旧迁移会话续聊成功，但 writer 仍只支持已验证 2.1.170。未开放新版新迁移或宣称新版桌面入口通过 |
 
 首个真实样本：
 
@@ -316,6 +325,7 @@ MVP Gate：
 | DSH smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a079cc-0137-78a2-b44c-8246d39f68fd` | paginated | DSH `0.1.0-rc.6` 原生 SessionEvent 历史、同 Workspace、原生回读、真实下一轮和续聊后幂等复跑通过；目标 session `session-idehub-116368030a2fa5a2a44915824725c5c1` |
 | ZCode smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | ZCode 3.10.2；目标 `sess_idehub_3d23d31cadaa63b5f29182b1a896d2181942c779243e901c9ade0f044d819f8a`；5 条迁移前缀、用户原有 6 条后缀、实现方实际新增 2 条问答全部在复跑后保留；第二轮待补 |
 | Pi smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | Pi 0.85.1；目标 `idehub-c51a145a91660a3cf7c301535697d7ab377c87233d5540d00b472e17c5a72e5b`；5 条迁入历史 + GLM-5.3-Flash 3 轮问答，原生重开和续聊后正式 UI 复跑通过 |
+| Claude Code smoke | `/Users/domino/develop/IdeaProjects/temp` | `01a05feb-7d16-7000-b06e-f4e1a4d43ea2` | paginated | 目标 `2f28f86f-533a-88c2-a2f1-cfd128e7bfdb`；5 条原始正文、2.1.170/2.1.268 各两轮普通 TUI DeepSeek 问答/pwd/重开通过；40 条原生回读、核心复跑 hash 一致。2.1.268 新迁移未适配 |
 | 兼容回归 | `/Users/domino/develop/IdeaProjects/temp` | `019ffe64-6259-7cc3-b567-3ac6425f7d6f` | legacy | reader 单测通过；未作为首个目标写入样本 |
 
 B0/B1/B2/B3 明确不做：
@@ -328,6 +338,8 @@ B0/B1/B2/B3 明确不做：
 ## 10. 阻塞项与待决策
 
 ### 10.1 当前阻塞项
+
+Claude Code：普通 TUI 登录阻塞已通过真实补验解除，2.1.170、2.1.268 各两轮发送与退出重开均成功，未改 Key/模型/CCSwitch。当前差距变为默认 CLI 2.1.268 的新迁移适配：现有 writer 仍正确返回不兼容；2.1.170 基线及旧文件续聊的成功不能代替新版新建与正式桌面验证。详见 [SESSION-MIG-007 验收记录](./verification/session-migration-007-claude-code.md)。
 
 Qoder CN 连续性受账号状态 `112` 外部阻塞。Cursor 迁移实现无外部阻塞，但精确失败回滚受当前版本缺少公开 delete-by-id 原生命令限制，仍作为未通过 Gate 管理。DSH rc.6 目标路径无当前阻塞；其他 DSH 版本继续由版本 Gate 禁止写入。
 
@@ -386,6 +398,12 @@ ZCode 模型阻塞已于 2026-09-10 解除，第一轮真实上下文回复与 A
 - Gate 失败：相关任务回到 `IN_PROGRESS`，不得通过降低完成定义直接标记 `DONE`。
 
 ## 13. 变更记录
+
+2026-09-11 再次补验 SESSION-MIG-007：普通 TUI 登录阻塞解除。当前默认 2.1.268 与已验证 2.1.170 各完成两轮实际发送、上下文问答、下一步/pwd 和退出重开；本轮 8 条同 Session 代理请求均 200，模型 deepseek-flash。真实核心复跑 `4bf308a2-2353-445a-9dd2-ab857f6f860c` 复用原目标，5 条源正文、导入前缀和所有新增内容保留，前后 hash `45bedda3...` 一致，40 条官方 SDK 回读通过。未改生产代码、Key、模型、代理配置或安装，未重跑完整测试套件，未提交。2.1.170 基线 AC-004/005 完成；2.1.268 新迁移适配仍独立待办。
+
+2026-09-11 补验 SESSION-MIG-007：按用户说明沿用 CCSwitch 的 deepseekv4.1flash，不改 Key/模型/代理配置。Claude 原生 `-p --resume` 两轮真实上下文问答和下一步 brief/pwd 成功，CCSwitch 三条模型请求全部 200；TUI 重开显示新增回复。正式 UI 复跑 `98f19990-f8bd-46a4-800f-16f6ca804377` 保持 Session 和完整 hash `fd667580...`。新增默认配置根启动回归并修复不必要的 CLAUDE_CONFIG_DIR 注入；58 项测试通过、2 项其他产品集成未启用，类型/构建/打包通过。AC-007 完成；当时普通 TUI 直接发送仍未通过，撤回将改 Key 作为真实模型补验前置的判断。未提交。
+
+2026-09-11 实现 SESSION-MIG-007：接入 Claude Code 2.1.170 / SDK 0.3.170 固定版本原生 JSONL writer，保留完整角色/正文/父链、新独立 ID 和 canonical A；新增正式 prototype 发现、完整预览、损失/文件计划、迁移、精确终端打开及未续聊目标回滚。57 项测试通过、2 项其他产品安装包集成未启用；打包与真实桌面探针通过，外层内核禁网迁移通过。实际原生列表、历史恢复与 `!pwd` 已验证；实际第一轮请求因已有 Key 被禁用返回未登录，AC-005 和成功续聊后的 AC-007 保持 BLOCKED。没有启用认证、改模型、提交或推送。
 
 2026-09-10 补验 SESSION-MIG-006：按用户明确授权配置 Pi 的智谱官方 GLM-5.3-Flash，独立请求返回 `PI_GLM_OK`。实现方在同一迁移会话完成旧上下文问答和下一步；保留模型初稿擅加规则的记录，再追加修订，累计 3 轮。原生退出重开、正式打包桌面复跑 `bfe0aab3-f466-43cb-8eaa-857c741dc046` 通过，11 条上下文 / 15 个 entry 和 20815 bytes 目标文件 hash 全部保留；源及配置不变。53 项测试通过、1 项 ZCode 安装包测试未启用，类型检查与构建通过。AC-005/AC-007 改为 DONE；未改生产迁移代码，未提交。
 
