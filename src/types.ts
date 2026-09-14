@@ -8,19 +8,27 @@ export type QoderTargetProduct = "qoder-international" | "qoder-cn";
 export type QoderBundleId = "com.qoder.ide" | "com.aliyun.lingma.ide";
 export type CursorTargetProduct = "cursor";
 export type DshTargetProduct = "deepseek-harness";
+export type CodeBuddyTargetProduct =
+  | "codebuddy-international"
+  | "codebuddy-cn";
 export type MigrationTargetProduct =
   | QoderTargetProduct
   | CursorTargetProduct
   | DshTargetProduct
+  | CodeBuddyTargetProduct
   | "zcode"
   | "pi"
   | "claude-code";
 export type CursorBundleId = "com.todesktop.230313mzl4w4u92";
 export type DshRuntimeId = "@deepseek-ai/dsh";
+export type CodeBuddyBundleId =
+  | "com.tencent.codebuddy"
+  | "com.tencent.codebuddycn";
 export type MigrationTargetBundleId =
   | QoderBundleId
   | CursorBundleId
   | DshRuntimeId
+  | CodeBuddyBundleId
   | "dev.zcode.app"
   | "@earendil-works/pi-coding-agent"
   | "@anthropic-ai/claude-code";
@@ -33,7 +41,12 @@ export type MigrationRequest = {
   dryRun: boolean;
 };
 
-export type MigrationStatus = "DRY_RUN" | "COMPLETED";
+export type MigrationStatus =
+  | "DRY_RUN"
+  | "ARCHIVE_READY"
+  | "WAITING_TARGET_IMPORT"
+  | "CANCELLED"
+  | "COMPLETED";
 
 export type MigrationResult = {
   migrationId: string;
@@ -56,6 +69,18 @@ export type MigrationResult = {
     projectedTurnCount: number;
     projectedMessageCount: number;
     lossReport: LossReport;
+    codeBuddy?: {
+      archiveId: string;
+      archivePath: string;
+      archiveBytes: number;
+      workspaceHash: string;
+      importVerified: boolean;
+      continuationVerified: false;
+      continuationRequestCount: number;
+      continuationMessageCount: number;
+      continuationCompletedRoundCount: number;
+      targetHistoryPath: string | null;
+    };
   };
 };
 
@@ -300,4 +325,22 @@ export type DshVerification = {
   projectedMessageCount: number;
   historyVisible: true;
   reused: boolean;
+};
+
+export type CodeBuddyInstallation = {
+  targetProduct: CodeBuddyTargetProduct;
+  appPath: string;
+  appName: "CodeBuddy.app" | "CodeBuddy CN.app";
+  bundleId: CodeBuddyBundleId;
+  version: string;
+  compatible: boolean;
+  compatibilityError: string | null;
+  productCommit: string;
+  applicationName: "buddy" | "buddycn";
+  extensionVersion: string;
+  extensionSha256: string;
+  launcherPath: string;
+  userDataRoot: string;
+  logsRoot: string;
+  historyDataRoot: string;
 };

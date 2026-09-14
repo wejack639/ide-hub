@@ -16,6 +16,8 @@ test("migration request accepts the implemented Codex target routes", () => {
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "claude-code" }).targetProduct, "claude-code");
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "pi" }).targetProduct, "pi");
   assert.equal(validateMigrationRequest({ ...valid, targetProduct: "zcode" }).targetProduct, "zcode");
+  assert.equal(validateMigrationRequest({ ...valid, targetProduct: "codebuddy-international" }).targetProduct, "codebuddy-international");
+  assert.equal(validateMigrationRequest({ ...valid, targetProduct: "codebuddy-cn" }).targetProduct, "codebuddy-cn");
   assert.deepEqual(validateMigrationRequest(valid), valid);
   assert.deepEqual(
     validateMigrationRequest({ ...valid, targetProduct: "qoder-cn" }),
@@ -59,7 +61,7 @@ test("migration request rejects model and MCP fields", () => {
   }
 });
 
-test("migration schemas expose Cursor and DSH as native targets", async () => {
+test("migration schemas expose every implemented native target", async () => {
   const [requestSchema, resultSchema] = await Promise.all(
     [
       "../schemas/session-migration-request-v1.schema.json",
@@ -78,6 +80,15 @@ test("migration schemas expose Cursor and DSH as native targets", async () => {
   assert.ok(requestSchema.properties.targetProduct.enum.includes("zcode"));
   assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("dev.zcode.app"));
   assert.ok(requestSchema.properties.targetProduct.enum.includes("deepseek-harness"));
+  assert.ok(requestSchema.properties.targetProduct.enum.includes("codebuddy-international"));
+  assert.ok(requestSchema.properties.targetProduct.enum.includes("codebuddy-cn"));
+  assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("codebuddy-international"));
+  assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("codebuddy-cn"));
+  assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("com.tencent.codebuddy"));
+  assert.ok(resultSchema.properties.continuation.properties.bundleId.enum.includes("com.tencent.codebuddycn"));
+  assert.ok(resultSchema.properties.status.enum.includes("WAITING_TARGET_IMPORT"));
+  assert.ok(resultSchema.properties.status.enum.includes("CANCELLED"));
+  assert.equal(resultSchema.properties.details.properties.codeBuddy.properties.continuationVerified.const, false);
   assert.ok(resultSchema.properties.continuation.properties.product.enum.includes("cursor"));
   assert.ok(
     resultSchema.properties.continuation.properties.product.enum.includes(

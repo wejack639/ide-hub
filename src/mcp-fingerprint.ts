@@ -30,6 +30,8 @@ export async function computeMcpFingerprint(
       ? await readEffectiveCursorMcp(workspace)
       : targetProduct === "deepseek-harness"
         ? await readEffectiveDshMcp()
+      : targetProduct === "codebuddy-international" || targetProduct === "codebuddy-cn"
+        ? await readCodeBuddyConfigurationFingerprints(workspace, targetProduct)
       : targetProduct === "zcode"
         ? await readEffectiveZcodeMcp(workspace)
       : await readEffectiveQoderMcp(workspace);
@@ -43,6 +45,49 @@ export async function computeMcpFingerprint(
       stableJson({ codexSha256, targetProduct, targetSha256 }),
     ),
   };
+}
+
+/** CodeBuddy 会话迁移只记录 MCP 相关文件/设置片段的 hash，不把配置正文写入产物。 */
+export async function readCodeBuddyConfigurationFingerprints(
+  workspace: string,
+  targetProduct: "codebuddy-international" | "codebuddy-cn",
+): Promise<Record<string, string | null>> {
+  const userDataDirectory = targetProduct === "codebuddy-international" ? "CodeBuddy" : "CodeBuddy CN";
+  const cliDirectory = targetProduct === "codebuddy-international" ? ".codebuddy" : ".codebuddycn";
+  const candidates = [
+    join(homedir(), cliDirectory, "mcp.json"),
+    join(homedir(), "Library", "Application Support", userDataDirectory, "User", "mcp.json"),
+    join(workspace, ".mcp.json"),
+    join(workspace, cliDirectory, "mcp.json"),
+  ];
+  const files: Record<string, string | null> = {};
+  for (const path of candidates) {
+    const content = await readTextIfExists(path);
+    files[path] = content === null ? null : sha256Text(content);
+  }
+  const settingsPath = join(
+    homedir(),
+    "Library",
+    "Application Support",
+    userDataDirectory,
+    "User",
+    "settings.json",
+  );
+  const settings = await readTextIfExists(settingsPath);
+  if (settings === null) {
+    files[`${settingsPath}#mcp`] = null;
+  } else {
+    try {
+      const parsed = JSON5.parse(settings) as Record<string, unknown>;
+      const mcpEntries = Object.fromEntries(
+        Object.entries(parsed).filter(([key]) => key.toLocaleLowerCase().includes("mcp")),
+      );
+      files[`${settingsPath}#mcp`] = sha256Text(stableJson(mcpEntries));
+    } catch {
+      files[`${settingsPath}#mcp`] = sha256Text(settings);
+    }
+  }
+  return files;
 }
 
 /** Claude 只核对配置指纹；不读取或复制认证正文到迁移产物。 */

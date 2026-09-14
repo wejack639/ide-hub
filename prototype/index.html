@@ -267,10 +267,17 @@
             <span class="cap cap-b">原生历史 · 已实现</span>
             <span class="tcard-desc">逐条 importedHistory + 同目录任务登记；新进程全量回读</span>
           </button>
-          <button class="tcard" data-target="codebuddy">
-            <span class="prod-tag codebuddy">CodeBuddy CN</span>
-            <span class="cap cap-c">C 级 · 交接</span>
-            <span class="tcard-desc">CLI 不在 PATH，App 内 runtime 发现后可升级 A/B</span>
+          <button class="tcard" data-target="codebuddy-international">
+            <span class="prod-tag codebuddy">CodeBuddy 国际版</span>
+            <span class="cap cap-b">官方 History Import · 已实现</span>
+            <span class="tcard-desc">单会话 JSON v1 · 同目录官方导入与原生逐消息回读</span>
+            <span class="tcard-flag">检测安装状态中</span>
+          </button>
+          <button class="tcard" data-target="codebuddy-cn">
+            <span class="prod-tag codebuddycn">CodeBuddy CN</span>
+            <span class="cap cap-b">官方 History Import · 已实现</span>
+            <span class="tcard-desc">与国际版独立发现、导入、回读和续聊验收</span>
+            <span class="tcard-flag">检测安装状态中</span>
           </button>
           <button class="tcard" data-target="deepseek-harness">
             <span class="prod-tag dsh">DeepSeek Harness</span>
@@ -381,7 +388,7 @@
           <div class="ho-grid">
             <div class="ho-sec"><div class="ho-label">工作区状态</div><div class="ho-body sm">branch <code>feature/capsule-schema</code> · HEAD <code>a1b2c3d</code> · dirty 3 文件</div></div>
             <div class="ho-sec"><div class="ho-label">验证</div><div class="ho-body sm"><span class="ok">✓ cargo test · 24 passed</span> · <span class="ok">✓ round-trip</span> · <span class="warn">⚠ 未运行：真实版本烟测</span></div></div>
-            <div class="ho-sec"><div class="ho-label">未解决问题</div><div class="ho-body sm">CodeBuddy CLI 不在 PATH，runtime 待发现</div></div>
+            <div class="ho-sec"><div class="ho-label">未解决问题</div><div class="ho-body sm">ZIP、MCP 与任务中心仍按独立功能迭代；会话迁移不依赖 CodeBuddy CLI</div></div>
             <div class="ho-sec"><div class="ho-label">历史工具线索</div><div class="ho-body sm">保留 chrome-devtools / context7 / mysql-dev 的历史调用结果；不迁移 MCP 配置</div></div>
           </div>
 

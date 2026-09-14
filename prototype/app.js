@@ -9,13 +9,14 @@ const PRODUCT_META = {
   qodercn: { name: "Qoder CN", label: "QCN", color: "#22b573" },
   cursor: { name: "Cursor", label: "Cu", color: "#f0883e" },
   claude: { name: "Claude Code", label: "Cl", color: "#d97757" },
-  codebuddy: { name: "CodeBuddy", label: "B", color: "#7c6ff0" },
+  codebuddy: { name: "CodeBuddy 国际版", label: "B", color: "#7c6ff0" },
+  codebuddycn: { name: "CodeBuddy CN", label: "BCN", color: "#9b74f3" },
   dsh: { name: "DeepSeek Harness", label: "D", color: "#35b6e8" },
   zcode: { name: "ZCode", label: "Z", color: "#22c3b5" },
   pi: { name: "Pi", label: "π", color: "#c084fc" },
 };
 
-const PRODUCT_ORDER = ["codex", "qoder", "qodercn", "cursor", "claude", "codebuddy", "dsh", "zcode", "pi"];
+const PRODUCT_ORDER = ["codex", "qoder", "qodercn", "cursor", "claude", "codebuddy", "codebuddycn", "dsh", "zcode", "pi"];
 const MIGRATION_TARGETS = {
   "claude-code": { productId: "claude", stateKey: "claude", name: "Claude Code" },
   pi: { productId: "pi", stateKey: "pi", name: "Pi" },
@@ -39,6 +40,16 @@ const MIGRATION_TARGETS = {
     productId: "dsh",
     stateKey: "dsh",
     name: "DeepSeek Harness",
+  },
+  "codebuddy-international": {
+    productId: "codebuddy",
+    stateKey: "codeBuddyInternational",
+    name: "CodeBuddy 国际版",
+  },
+  "codebuddy-cn": {
+    productId: "codebuddycn",
+    stateKey: "codeBuddyCn",
+    name: "CodeBuddy CN",
   },
 };
 const MIGRATION_STEPS = ["源会话", "目标", "空闲检查", "投影预览", "损失报告", "写入计划", "执行"];
@@ -64,6 +75,10 @@ const state = {
   claude: null,
   claudePreview: null,
   claudePreviewGeneration: 0,
+  codeBuddyInternational: null,
+  codeBuddyCn: null,
+  codeBuddyPreview: null,
+  codeBuddyPreviewGeneration: 0,
   current: null,
   selected: new Set(),
   search: "",
@@ -93,6 +108,8 @@ function defaultMigrationTarget() {
   if (state.zcode?.installed && state.zcode?.compatible) return "zcode";
   if (state.pi?.installed && state.pi?.compatible) return "pi";
   if (state.claude?.installed && state.claude?.compatible) return "claude-code";
+  if (state.codeBuddyInternational?.installed && state.codeBuddyInternational?.compatible) return "codebuddy-international";
+  if (state.codeBuddyCn?.installed && state.codeBuddyCn?.compatible) return "codebuddy-cn";
   if (state.dsh?.installed && state.dsh?.compatible && state.dsh?.bridgeCompatible) {
     return "deepseek-harness";
   }
@@ -205,6 +222,20 @@ function renderProducts() {
       return { id, version: state.claude?.version ?? "未安装",
         note: state.claude?.compatible ? "原生 JSONL 历史 · 终端续聊" : state.claude?.compatibilityError ?? "未发现 Claude Code",
         status: state.claude?.compatible ? "ok" : "warn" };
+    }
+    if (id === "codebuddy" || id === "codebuddycn") {
+      const installation = id === "codebuddy" ? state.codeBuddyInternational : state.codeBuddyCn;
+      const edition = id === "codebuddy" ? "国际版" : "CN";
+      return {
+        id,
+        version: installation?.installed ? installation.version : "未安装",
+        note: installation?.compatible
+          ? `官方 History JSON Import · ${edition} 独立回读`
+          : installation?.installed
+            ? installation.compatibilityError
+            : `未发现 CodeBuddy ${edition}`,
+        status: installation?.compatible ? "ok" : installation?.installed ? "warn" : "none",
+      };
     }
     if (id === "zcode") {
       return { id, version: state.zcode?.version ?? "未安装",
@@ -356,6 +387,8 @@ function renderDetail() {
   const canMigrateZcode = thread.migratable && state.zcode?.compatible && !state.migrating;
   const canMigratePi = thread.migratable && state.pi?.compatible && !state.migrating;
   const canMigrateClaude = thread.migratable && state.claude?.compatible && !state.migrating;
+  const canMigrateCodeBuddyInternational = thread.migratable && state.codeBuddyInternational?.compatible && !state.migrating;
+  const canMigrateCodeBuddyCn = thread.migratable && state.codeBuddyCn?.compatible && !state.migrating;
   const canMigrateDsh = thread.migratable
     && state.dsh?.installed
     && state.dsh?.compatible
@@ -383,15 +416,34 @@ function renderDetail() {
         : `DeepSeek Harness ${esc(state.dsh.version)} 已发现，需先启用本地迁移桥`
       : `DeepSeek Harness ${esc(state.dsh.version)} 不兼容：${esc(state.dsh.compatibilityError)}`
     : "未发现 DeepSeek Harness，暂不能迁移";
+  const codeBuddyInternationalStatus = state.codeBuddyInternational?.installed
+    ? state.codeBuddyInternational.compatible
+      ? `CodeBuddy 国际版 ${esc(state.codeBuddyInternational.version)} 官方归档迁移已就绪`
+      : `CodeBuddy 国际版不兼容：${esc(state.codeBuddyInternational.compatibilityError)}`
+    : "未发现 CodeBuddy 国际版";
+  const codeBuddyCnStatus = state.codeBuddyCn?.installed
+    ? state.codeBuddyCn.compatible
+      ? `CodeBuddy CN ${esc(state.codeBuddyCn.version)} 官方归档迁移已就绪`
+      : `CodeBuddy CN 不兼容：${esc(state.codeBuddyCn.compatibilityError)}`
+    : "未发现 CodeBuddy CN";
   const resultTarget = migrationTarget(state.lastResult?.continuation?.product);
+  const lastResultTitle = state.lastResult?.status === "WAITING_TARGET_IMPORT"
+    ? `${esc(resultTarget.name)} 归档已生成，等待官方 Import`
+    : state.lastResult?.status === "CANCELLED"
+      ? `${esc(resultTarget.name)} Import 等待已取消，归档保留`
+      : `${esc(resultTarget.name)} 原生历史已创建并回读校验`;
+  const lastResultIcon = state.lastResult?.status === "WAITING_TARGET_IMPORT"
+    ? "…"
+    : state.lastResult?.status === "CANCELLED" ? "×" : "✓";
+  const lastResultIconClass = state.lastResult?.status === "COMPLETED" ? "ok" : "";
   const result = state.lastResult?.sourceThreadId === thread.id ? `
     <div class="detail-sec">
       <div class="ds-label">最近迁移结果</div>
       <div class="result-card compact-result">
-        <div class="result-icon ok">✓</div>
+        <div class="result-icon ${lastResultIconClass}">${lastResultIcon}</div>
         <div>
-          <strong>${esc(resultTarget.name)} 原生历史已创建并回读校验</strong>
-          <div class="muted-note mono">Session ${esc(state.lastResult.targetSessionId)}</div>
+          <strong>${lastResultTitle}</strong>
+          <div class="muted-note mono">${state.lastResult.targetSessionId ? `Session ${esc(state.lastResult.targetSessionId)}` : `Archive ${esc(state.lastResult.details.codeBuddy?.archiveId ?? "")}`}</div>
           <div class="muted-note">${state.lastResult.details.projectedTurnCount} 轮 · ${state.lastResult.details.projectedMessageCount} 条消息 · MCP 未修改</div>
         </div>
       </div>
@@ -424,6 +476,8 @@ function renderDetail() {
       <div class="muted-note">${esc(state.zcode?.compatible ? `ZCode ${state.zcode.version} 原生导入已就绪` : state.zcode?.compatibilityError ?? "未发现 ZCode")}</div>
       <div class="muted-note">${esc(state.pi?.compatible ? `Pi ${state.pi.version} · 原生历史 / 终端续聊` : state.pi?.compatibilityError ?? "未发现 Pi")}</div>
       <div class="muted-note">${esc(state.claude?.compatible ? `Claude Code ${state.claude.version} · 原生历史 / 终端续聊` : state.claude?.compatibilityError ?? "未发现 Claude Code")}</div>
+      <div class="muted-note">${codeBuddyInternationalStatus}</div>
+      <div class="muted-note">${codeBuddyCnStatus}</div>
     </div>
     <div class="detail-sec">
       <div class="ds-label">迁移边界</div>
@@ -439,6 +493,8 @@ function renderDetail() {
       <button class="btn btn-ghost" id="detailMigrateZcode" ${canMigrateZcode ? "" : "disabled"}>迁移到 ZCode…</button>
       <button class="btn btn-ghost" id="detailMigratePi" ${canMigratePi ? "" : "disabled"}>迁移到 Pi…</button>
       <button class="btn btn-ghost" id="detailMigrateClaude" ${canMigrateClaude ? "" : "disabled"}>迁移到 Claude Code…</button>
+      <button class="btn btn-ghost" id="detailMigrateCodeBuddyInternational" ${canMigrateCodeBuddyInternational ? "" : "disabled"}>迁移到 CodeBuddy 国际版…</button>
+      <button class="btn btn-ghost" id="detailMigrateCodeBuddyCn" ${canMigrateCodeBuddyCn ? "" : "disabled"}>迁移到 CodeBuddy CN…</button>
       ${canPrepareDsh
         ? '<button class="btn btn-ghost" id="detailPrepareDsh">启用 DSH 本地迁移桥…</button>'
         : `<button class="btn btn-ghost" id="detailMigrateDsh" ${canMigrateDsh ? "" : "disabled"}>迁移到 DeepSeek Harness…</button>`}
@@ -450,6 +506,8 @@ function renderDetail() {
   $("#detailMigrateZcode").addEventListener("click", () => openMigration(thread, "zcode"));
   $("#detailMigratePi").addEventListener("click", () => openMigration(thread, "pi"));
   $("#detailMigrateClaude").addEventListener("click", () => openMigration(thread, "claude-code"));
+  $("#detailMigrateCodeBuddyInternational").addEventListener("click", () => openMigration(thread, "codebuddy-international"));
+  $("#detailMigrateCodeBuddyCn").addEventListener("click", () => openMigration(thread, "codebuddy-cn"));
   $("#detailPrepareDsh")?.addEventListener("click", () => void prepareDshBridge());
   $("#detailMigrateDsh")?.addEventListener("click", () => openMigration(thread, "deepseek-harness"));
   $("#detailExport").addEventListener("click", () => openStubWizard("ovExport"));
@@ -509,6 +567,8 @@ function openMigration(thread = chosenThread(), requestedTarget = null) {
   state.piPreviewGeneration += 1;
   state.claudePreview = null;
   state.claudePreviewGeneration += 1;
+  state.codeBuddyPreview = null;
+  state.codeBuddyPreviewGeneration += 1;
   state.migrationStep = 1;
   state.migrationVisited = new Set([1]);
   state.migrationStarted = false;
@@ -530,6 +590,7 @@ function renderMigrationContext(thread) {
   const isZcode = state.migrationTarget === "zcode";
   const isPi = state.migrationTarget === "pi";
   const isClaude = state.migrationTarget === "claude-code";
+  const isCodeBuddy = state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn";
   $(".wiz-sub", overlay).textContent = `Codex → ${target.name} · 原生 User / Assistant 历史`;
   const status = statusOf(thread);
   const first = $('[data-pane="1"]', overlay);
@@ -580,6 +641,8 @@ function renderMigrationContext(thread) {
     card.onclick = available
       ? () => {
         state.migrationTarget = card.dataset.target;
+        state.codeBuddyPreview = null;
+        state.codeBuddyPreviewGeneration += 1;
         $("#migConfirm").checked = false;
         renderMigrationContext(thread);
         goMigrationStep(state.migrationStep);
@@ -597,8 +660,8 @@ function renderMigrationContext(thread) {
     card.classList.toggle("selected", implemented);
     card.classList.toggle("disabled", !implemented);
     if (implemented) {
-      $(".rcard-head", card).textContent = isZcode || isPi || isClaude ? "完整原生历史" : "标准";
-      $(".rcard-desc", card).textContent = isZcode || isPi || isClaude
+      $(".rcard-head", card).textContent = isZcode || isPi || isClaude || isCodeBuddy ? "完整原生历史" : "标准";
+      $(".rcard-desc", card).textContent = isZcode || isPi || isClaude || isCodeBuddy
         ? "全部可见消息 · 保留原顺序与独立角色"
         : "Handoff + 最近 N 轮 + 关键证据";
     }
@@ -607,6 +670,8 @@ function renderMigrationContext(thread) {
   targetNotes[0].textContent = `目标路径不可修改：${target.name} 会话固定创建在源会话的同一工作区。`;
   targetNotes[1].textContent = isClaude
     ? `Claude Code ${installation.version} · 新建独立原生 JSONL；迁移无需 Key。在终端按确切 ID 恢复，不是 Claude Desktop 或 IDE 扩展。`
+    : isCodeBuddy
+    ? `${target.name} ${installation.version} · ${installation.bundleId}；生成官方 codebuddy.conversation v1 JSON，当前 IDE Hub 不调用模型。需要在该版本 History 的 Import 对话框选择一次归档。`
     : isPi
     ? `Pi ${installation.version} · SessionManager / JSONL v3；迁移不调用模型。结果入口在终端打开确切会话，不需要手工复制历史。`
     : isCursor
@@ -627,8 +692,8 @@ function renderMigrationContext(thread) {
       <div class="ho-grid">
         <div class="ho-sec"><div class="ho-label">源工作区</div><div class="ho-body sm mono">${esc(thread.cwd)}</div></div>
         <div class="ho-sec"><div class="ho-label">目标工作区</div><div class="ho-body sm mono">${esc(thread.cwd)}</div></div>
-        <div class="ho-sec"><div class="ho-label">写入方式</div><div class="ho-body sm">${isZcode ? "ZCode session/create(importedHistory) + 精确桌面任务登记" : isCursor ? "Cursor developer.bulkImportChats · Chat JSON v1" : isDsh ? "DSH ctx.agents.create + SessionEvent v0 seed + workspace.attachSession" : "Qoder session/new + appendHistoryTurn"}</div></div>
-        <div class="ho-sec"><div class="ho-label">模型调用</div><div class="ho-body sm ok">${isZcode ? "禁止 session/send；迁移子进程禁止网络" : isCursor ? "禁止 startComposerPrompt 与 sendToAgent" : isDsh ? "禁止 agent.followup / steer 与 session.prompt" : "禁止 session/prompt 与 chat/ask"}</div></div>
+        <div class="ho-sec"><div class="ho-label">写入方式</div><div class="ho-body sm">${isCodeBuddy ? "CodeBuddy 官方 History Import · 单会话 JSON v1" : isZcode ? "ZCode session/create(importedHistory) + 精确桌面任务登记" : isCursor ? "Cursor developer.bulkImportChats · Chat JSON v1" : isDsh ? "DSH ctx.agents.create + SessionEvent v0 seed + workspace.attachSession" : "Qoder session/new + appendHistoryTurn"}</div></div>
+        <div class="ho-sec"><div class="ho-label">模型调用</div><div class="ho-body sm ok">${isCodeBuddy ? "只用 desktop launcher 打开 A；禁止 buddy chat / buddycn chat" : isZcode ? "禁止 session/send；迁移子进程禁止网络" : isCursor ? "禁止 startComposerPrompt 与 sendToAgent" : isDsh ? "禁止 agent.followup / steer 与 session.prompt" : "禁止 session/prompt 与 chat/ask"}</div></div>
       </div>
     </div>
     <div class="banner banner-info">完整读取后，只把可见 User / Assistant 正文投影到 ${esc(target.name)} 原生历史；其他事件保留在本地 Capsule 审计文件中。</div>`;
@@ -644,11 +709,13 @@ function renderMigrationContext(thread) {
 
   $('[data-pane="6"] .pane-sub', overlay).textContent = isZcode
     ? "首次写入前备份两库（含 WAL）。正文与索引分步提交；失败不报成功，复跑仅恢复本次目标，不整库回滚。"
+    : isCodeBuddy
+      ? "IDE Hub 只生成官方单会话 JSON 并打开正确版本的 A；用户完成 History Import 后，按目标版本日志、originalId、A 的 MD5 分区和逐消息文件回读。"
     : "执行前记录源快照和写入计划；失败结果与目标清理情况保存在迁移记录中。";
   $('[data-pane="6"] .ops', overlay).innerHTML = `
     <div class="op-row"><span class="op-badge b-backup">只读</span><div class="op-main"><code>${esc(thread.path)}</code><div class="op-sub">迁移前后 fingerprint 必须一致</div></div></div>
     <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>IDE Hub/migrations/&lt;新 migration id&gt;/</code><div class="op-sub">source snapshot · capsule · projection · loss report · journal</div></div></div>
-    <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>${esc(target.name)}原生会话</code><div class="op-sub">工作区：${esc(thread.cwd)} · 逐轮写入、回读和历史列表可见性校验</div></div></div>
+    <div class="op-row"><span class="op-badge b-create">创建</span><div class="op-main"><code>${isCodeBuddy ? `${esc(target.name)} 官方 JSON 归档` : `${esc(target.name)}原生会话`}</code><div class="op-sub">工作区：${esc(thread.cwd)} · ${isCodeBuddy ? "目标官方 Import 写入，Hub 不直接修改私有 History" : "逐轮写入、回读和历史列表可见性校验"}</div></div></div>
     <div class="op-row"><span class="op-badge b-conf">不修改</span><div class="op-main"><code>Codex / ${esc(target.name)} MCP 配置</code><div class="op-sub">迁移前后指纹必须一致</div></div></div>`;
 }
 
@@ -656,6 +723,7 @@ function goMigrationStep(step) {
   if (!state.migrationThread || step < 1 || step > MIGRATION_STEPS.length) return;
   if (step === 7 && state.migrationTarget === "pi" && (!state.piPreview || !$("#migConfirm").checked)) return;
   if (step === 7 && state.migrationTarget === "claude-code" && (!state.claudePreview || !$("#migConfirm").checked)) return;
+  if (step === 7 && (state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn") && (!state.codeBuddyPreview || !$("#migConfirm").checked)) return;
   state.migrationStep = step;
   state.migrationVisited.add(step);
   const overlay = $("#ovMigration");
@@ -684,8 +752,52 @@ function goMigrationStep(step) {
     next.disabled = true;
     void loadClaudePreview();
   }
+  if ((state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn") && step >= 4 && step <= 6) {
+    next.disabled = true;
+    void loadCodeBuddyPreview();
+  }
   if (step === 3) renderSourceChecks();
   if (step === 7 && !state.migrationStarted) void executeMigration();
+}
+
+async function loadCodeBuddyPreview() {
+  const thread = state.migrationThread;
+  const targetProduct = state.migrationTarget;
+  const generation = state.codeBuddyPreviewGeneration;
+  const pane = $('#ovMigration [data-pane="4"]');
+  if (!state.codeBuddyPreview) {
+    pane.innerHTML = `<h3 class="pane-title">正在离线生成 ${esc(migrationTarget().name)} 官方归档预览…</h3><p>不会写入目标 History，也不会调用模型。</p>`;
+    try {
+      const response = await window.ideHub.previewCodeBuddy(thread.id, targetProduct);
+      if (generation !== state.codeBuddyPreviewGeneration || state.migrationTarget !== targetProduct) return;
+      if (!response.ok) throw response.error;
+      state.codeBuddyPreview = response.data;
+    } catch (error) {
+      if (generation === state.codeBuddyPreviewGeneration && state.migrationTarget === targetProduct) {
+        pane.innerHTML = `<div class="banner banner-error">预览失败：${esc(normalizeError(error).message)}。返回上一步重试。</div>`;
+      }
+      return;
+    }
+  }
+  if (state.migrationTarget !== targetProduct) return;
+  const { projection, result, plan } = state.codeBuddyPreview;
+  const messages = projection.turns.flatMap((turn) => turn.messages);
+  pane.innerHTML = `<h3 class="pane-title">${esc(migrationTarget().name)} 官方 archive v1 · ${messages.length} 条</h3>
+    <p class="mono">${esc(result.workspace)} → MD5 ${esc(plan.workspaceHash)}</p>
+    <div class="banner banner-info">每条 User / Assistant 独立保留；连续同角色不合并，user-only 结尾不补假回答。</div>
+    ${messages.map((message, index) => `<details class="card"><summary>${index + 1}. ${esc(message.role)} · ${esc(message.content.slice(0, 90))}</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(message.content)}</pre></details>`).join("")}`;
+  const loss = projection.lossReport;
+  $('#ovMigration [data-pane="5"] tbody').innerHTML = `
+    <tr><td>User / Assistant 正文</td><td><span class="loss-chip l-full">完整归档</span></td><td>${loss.includedMessageCount} 条，${loss.includedMessageBytes} bytes；角色、顺序和换行逐条回读</td></tr>
+    ${Object.entries(loss.omittedEventTypes).map(([type, count]) => `<tr><td>${esc(type)}</td><td><span class="loss-chip l-arch">仅 Hub 审计</span></td><td>${count} 项，不伪造成目标 tool/system 消息</td></tr>`).join("")}
+    <tr><td>模型 / 用量 / 账号</td><td><span class="loss-chip l-skip">不写入</span></td><td>迁移 archive 不含 model、usage、Key 或登录态</td></tr>
+    <tr><td>MCP</td><td><span class="loss-chip l-skip">不迁移</span></td><td>只比对配置指纹；仍属于独立全局配置流程</td></tr>`;
+  $('#ovMigration [data-pane="6"] .pane-sub').textContent = "生成不超过 20 MiB 的官方 JSON，打开所选 CodeBuddy 版本的同一工作区；官方 Import 完成且原生逐消息回读前不会显示迁移成功。";
+  $('#ovMigration [data-pane="6"] .ops').innerHTML = `
+    <div class="op-row"><span class="op-badge b-create">生成</span><div class="op-main"><code>${esc(plan.archivePath)}</code><div class="op-sub">${plan.archiveBytes} bytes / ${plan.archiveMaxBytes} bytes · Archive ID ${esc(plan.archiveId)}</div></div></div>
+    <div class="op-row"><span class="op-badge b-open">打开</span><div class="op-main"><code>${esc(migrationTarget().name)} · ${esc(result.workspace)}</code><div class="op-sub">只传目录参数，不运行 buddy chat / buddycn chat；随后在 History 中选择 Import</div></div></div>
+    <div class="op-row"><span class="op-badge b-conf">不修改</span><div class="op-main">Codex 源、目标私有 History（由官方 Import 写入）、MCP、模型和认证</div></div>`;
+  $('#ovMigration [data-wiz-next]').disabled = state.migrationStep === 6 && !$("#migConfirm").checked;
 }
 
 async function loadPiPreview() {
@@ -803,7 +915,14 @@ function renderSourceChecks() {
 
 function renderMigrationTimeline(mode = "running") {
   const target = migrationTarget();
-  const labels = [
+  const isCodeBuddy = state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn";
+  const labels = isCodeBuddy ? [
+    "只读读取 Codex 源会话并复核源文件",
+    "生成并严格校验 codebuddy.conversation v1 单会话 JSON",
+    `无 prompt 打开 ${target.name} 的同一工作区 A，并显示归档文件`,
+    "等待用户在目标 History 中执行官方 Import",
+    "按目标版本日志、originalId、A 分区和逐消息文件完成原生回读",
+  ] : [
     "只读读取 Codex 源会话并复核源文件",
     "生成 source snapshot、Capsule 与会话投影",
     `在相同工作区创建 ${target.name} 原生会话`,
@@ -811,8 +930,9 @@ function renderMigrationTimeline(mode = "running") {
     "复核 Codex 源文件与 MCP 指纹",
   ];
   $("#migTimeline").innerHTML = labels.map((label, index) => {
-    const className = mode === "done" ? "done" : mode === "error" && index === 0 ? "failed" : index === 0 ? "running" : "";
-    return `<div class="st-item ${className}"><span class="st-dot"></span><span>${label}</span><span class="st-time">${mode === "done" ? "✓" : ""}</span></div>`;
+    const waitingDone = mode === "waiting" && index < 3;
+    const className = mode === "done" || waitingDone ? "done" : mode === "waiting" && index === 3 ? "running" : mode === "error" && index === 0 ? "failed" : index === 0 ? "running" : "";
+    return `<div class="st-item ${className}"><span class="st-dot"></span><span>${label}</span><span class="st-time">${mode === "done" || waitingDone ? "✓" : mode === "waiting" && index === 3 ? "等待" : ""}</span></div>`;
   }).join("");
 }
 
@@ -830,9 +950,15 @@ async function executeMigration() {
     const response = await window.ideHub.migrate(thread.id, targetProduct);
     if (!response.ok) throw response.error;
     state.lastResult = response.data;
-    renderMigrationTimeline("done");
-    renderMigrationResult(response.data);
-    toast(`${target.name} 原生会话迁移完成并通过回读校验`, "ok");
+    if (response.data.status === "WAITING_TARGET_IMPORT") {
+      renderMigrationTimeline("waiting");
+      renderMigrationResult(response.data);
+      toast(`${target.name} 归档已生成；请在目标 History 中完成官方 Import`, "ok");
+    } else {
+      renderMigrationTimeline("done");
+      renderMigrationResult(response.data);
+      toast(`${target.name} 原生会话迁移完成并通过回读校验`, "ok");
+    }
   } catch (rawError) {
     const error = normalizeError(rawError);
     state.lastError = error;
@@ -846,9 +972,15 @@ async function executeMigration() {
 }
 
 function renderMigrationResult(result) {
+  if (result.status === "WAITING_TARGET_IMPORT") {
+    renderCodeBuddyWaitingResult(result);
+    return;
+  }
   const container = $("#migResult");
   const loss = result.details.lossReport;
   const target = migrationTarget(result.continuation.product);
+  const isCodeBuddy = result.continuation.product === "codebuddy-international" || result.continuation.product === "codebuddy-cn";
+  const codeBuddy = result.details.codeBuddy;
   const continuationHelp = result.continuation.product === "claude-code"
     ? "Claude Code 原生历史已导入，完整载荷与官方磁盘列表/消息回读通过。按钮会从同一工作区在终端按确切 Session ID 恢复；也可用 /resume 查找 Codex 标题。这不是 Claude Desktop 或 IDE 扩展入口。历史模型标识仅表示 Codex 来源；续聊使用 Claude Code 自己的模型和认证。本次迁移不发送测试消息，真实续聊尚未验证。"
     : result.continuation.product === "pi"
@@ -857,6 +989,8 @@ function renderMigrationResult(result) {
     ? `已按目标 Session ID 请求 Cursor 打开该原生会话；也可从 Chat History 中按“Codex · …”标题找到它。`
     : result.continuation.product === "zcode"
       ? `ZCode 原生历史已重开回读，桌面任务已登记。点击下方按钮打开项目，在任务列表找到“Codex · …”。当前入口只打开项目，不声称自动定位指定会话；Session ID：${result.targetSessionId}。迁移阶段不发送模型消息。`
+    : isCodeBuddy
+      ? `${target.name} 已通过官方 Import 落入工作区 A，并按确切 originalId、请求/消息关系和逐条正文完成原生回读。${codeBuddy?.continuationCompletedRoundCount > 0 ? `另检测到 ${codeBuddy.continuationCompletedRoundCount} 轮目标端新增问答已完整持久化；回答语义仍由独立真实续聊验收记录确认。` : "迁移阶段没有发送模型消息，真实续聊仍未验证。"}请在 Chat History 中按迁移标题或 Session ID ${result.targetSessionId} 找到会话。`
     : result.continuation.product === "deepseek-harness"
       ? `已打开 DSH Web。会话已挂载到同一工作区，请在会话列表按迁移标题或 Session ID ${result.targetSessionId} 找到并继续。`
       : `已请求 ${target.name} 打开同一工作区。请在聊天区右上角打开 Chat History，选择最新的“Codex · …”会话继续。`;
@@ -876,12 +1010,13 @@ function renderMigrationResult(result) {
       <div class="kv-item"><div class="kv-k">模型调用</div><div class="kv-v ok">否</div></div>
       <div class="kv-item"><div class="kv-k">MCP 修改</div><div class="kv-v ok">否</div></div>
       <div class="kv-item"><div class="kv-k">源快照 sha256</div><div class="kv-v mono">${esc(result.details.sourceSnapshotSha256.slice(0, 16))}…</div></div>
+      ${isCodeBuddy ? `<div class="kv-item"><div class="kv-k">目标新增持久化</div><div class="kv-v ${codeBuddy?.continuationCompletedRoundCount > 0 ? "ok" : "warn"}">${codeBuddy?.continuationCompletedRoundCount > 0 ? `${codeBuddy.continuationCompletedRoundCount} 轮 · 语义另验` : "尚无续聊"}</div></div>` : ""}
     </div>
     <div class="banner banner-info result-help">${esc(continuationHelp)}</div>
     <div class="result-actions">
       <button class="btn btn-primary" id="migOpenTarget">${result.continuation.product === "claude-code" ? "在终端中打开 Claude Code 会话" : result.continuation.product === "pi" ? "在终端中打开 Pi 会话" : `打开 ${esc(target.name)} 工作区`}</button>
       <button class="btn btn-ghost" data-real-close>关闭向导</button>
-      ${result.continuation.product === "claude-code" ? '<button class="btn btn-danger-ghost" id="migRollbackClaude">回滚本次导入…</button>' : '<button class="btn btn-danger-ghost" disabled>回滚（未实现）</button>'}
+      ${result.continuation.product === "claude-code" ? '<button class="btn btn-danger-ghost" id="migRollbackClaude">回滚本次导入…</button>' : isCodeBuddy ? '<button class="btn btn-danger-ghost" id="migRollbackCodeBuddy">恢复 / 删除本次导入…</button>' : '<button class="btn btn-danger-ghost" disabled>回滚（未实现）</button>'}
     </div>`;
   $("#migOpenTarget").addEventListener("click", () => void openTarget(result.workspace, result.continuation.product, result.targetSessionId));
   $("[data-real-close]", container).addEventListener("click", closeMigration);
@@ -896,6 +1031,148 @@ function renderMigrationResult(result) {
       toast("已删除本次未续聊目标；源会话、其他会话及 Hub 归档保留，可重新迁移", "ok");
     } catch (error) { toast(normalizeError(error).message, "warn"); }
   });
+  $("#migRollbackCodeBuddy")?.addEventListener("click", () => void prepareCodeBuddyRollback(result));
+}
+
+async function prepareCodeBuddyRollback(result) {
+  const target = migrationTarget(result.continuation.product);
+  if (!window.confirm(`恢复只针对本次 ${target.name} 导入。IDE Hub 不会直接写或删除私有 History；下一步会打开工作区，由你在官方 History 中删除确切 Session。继续？`)) return;
+  let response = await window.ideHub.prepareCodeBuddyRollback(
+    result.workspace,
+    result.continuation.product,
+    result.details.codeBuddy.archiveId,
+    result.targetSessionId,
+    false,
+  );
+  if (!response.ok && response.error.code === "CODEBUDDY_ROLLBACK_HAS_CONTINUATION") {
+    const counts = response.error.details ?? {};
+    const confirmed = window.confirm(`该会话已有目标端新增聊天（${counts.continuationRequestCount ?? "?"} 个 request / ${counts.continuationMessageCount ?? "?"} 条消息）。默认不会删除。是否明确同意把这些新增聊天和本次导入一并从官方 History 删除？`);
+    if (!confirmed) {
+      toast("已保留含续聊的 CodeBuddy 会话", "warn");
+      return;
+    }
+    response = await window.ideHub.prepareCodeBuddyRollback(
+      result.workspace,
+      result.continuation.product,
+      result.details.codeBuddy.archiveId,
+      result.targetSessionId,
+      true,
+    );
+  }
+  if (!response.ok) {
+    toast(response.error.message, "warn");
+    return;
+  }
+  renderCodeBuddyRollbackWaiting(result, response.data);
+}
+
+function renderCodeBuddyRollbackWaiting(result, inspection) {
+  const container = $("#migResult");
+  const target = migrationTarget(result.continuation.product);
+  container.innerHTML = `
+    <div class="result-card">
+      <div class="result-icon">…</div>
+      <div><h4>等待在 ${esc(target.name)} 官方 History 中删除</h4><p class="muted">只删除 Session <code>${esc(result.targetSessionId)}</code>；IDE Hub 不直接修改目标私有文件。</p></div>
+    </div>
+    <div class="banner ${inspection.continuationWillBeDeleted ? "banner-warn" : "banner-info"}">${inspection.continuationWillBeDeleted ? `你已明确同意一并删除 ${inspection.continuationRequestCount} 个续聊 request / ${inspection.continuationMessageCount} 条续聊消息。` : "该会话没有目标端新增聊天。"}在 Chat History 中核对标题和 Session ID 后使用官方删除；完成后回到这里检查。</div>
+    <div class="result-actions">
+      <button class="btn btn-primary" id="migConfirmCodeBuddyRollback">检查官方删除结果</button>
+      <button class="btn btn-ghost" id="migCancelCodeBuddyRollback">取消并保留会话</button>
+    </div>`;
+  $("#migConfirmCodeBuddyRollback").addEventListener("click", async () => {
+    const response = await window.ideHub.confirmCodeBuddyRollback(
+      result.workspace,
+      result.continuation.product,
+      result.details.codeBuddy.archiveId,
+      result.targetSessionId,
+    );
+    if (!response.ok) {
+      toast(response.error.message, "warn");
+      return;
+    }
+    state.lastResult = null;
+    closeMigration();
+    renderDetail();
+    toast("官方目标会话已确认消失；仅本次 Hub 幂等映射已撤销，源会话和归档保留", "ok");
+  });
+  $("#migCancelCodeBuddyRollback").addEventListener("click", () => renderMigrationResult(result));
+}
+
+function renderCodeBuddyWaitingResult(result) {
+  const container = $("#migResult");
+  const target = migrationTarget(result.continuation.product);
+  const archive = result.details.codeBuddy;
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="result-card">
+      <div class="result-icon">…</div>
+      <div>
+        <h4>归档已就绪，等待 ${esc(target.name)} 官方 Import</h4>
+        <p class="muted">此时尚未完成迁移，也没有向模型发送消息。</p>
+      </div>
+    </div>
+    <div class="kv-grid cols3 result-kv">
+      <div class="kv-item"><div class="kv-k">目标工作区 A</div><div class="kv-v mono">${esc(result.workspace)}</div></div>
+      <div class="kv-item"><div class="kv-k">Archive ID</div><div class="kv-v mono">${esc(archive.archiveId)}</div></div>
+      <div class="kv-item"><div class="kv-k">归档大小</div><div class="kv-v">${archive.archiveBytes} bytes</div></div>
+    </div>
+    <div class="banner banner-info result-help"><b>现在到 ${esc(target.name)}：</b>打开 Chat 区的 History → Import，选择 Finder 已定位的 JSON 文件。看到目标提示 Import 成功后，回到这里点击“检查导入并完成”。IDE Hub 将核对所选版本、A 的工作区 MD5、originalId、request/message 关系及每条正文。</div>
+    <div class="mono path-block">${esc(archive.archivePath)}</div>
+    <div class="result-actions">
+      <button class="btn btn-primary" id="migVerifyCodeBuddy">检查导入并完成</button>
+      <button class="btn btn-ghost" id="migRevealCodeBuddy">在 Finder 中显示归档</button>
+      <button class="btn btn-ghost" id="migReopenCodeBuddy">重新打开 ${esc(target.name)} 的 A</button>
+      <button class="btn btn-danger-ghost" id="migCancelCodeBuddy">取消本次等待</button>
+      <button class="btn btn-ghost" data-real-close>稍后处理</button>
+    </div>`;
+  $("#migVerifyCodeBuddy").addEventListener("click", () => void verifyCodeBuddyImport(result));
+  $("#migRevealCodeBuddy").addEventListener("click", async () => {
+    const response = await window.ideHub.revealCodeBuddyArchive(result.migrationId);
+    toast(response.ok ? "已在 Finder 中定位归档" : response.error.message, response.ok ? "ok" : "warn");
+  });
+  $("#migReopenCodeBuddy").addEventListener("click", () => void openTarget(result.workspace, result.continuation.product, null));
+  $("#migCancelCodeBuddy").addEventListener("click", async () => {
+    if (!window.confirm("取消后只结束本次等待状态；官方归档和审计产物保留，源会话及目标 History 不会被修改。确定？")) return;
+    const response = await window.ideHub.cancelCodeBuddyMigration(result.migrationId);
+    if (!response.ok) {
+      toast(response.error.message, "warn");
+      return;
+    }
+    state.lastResult = response.data;
+    closeMigration();
+    renderDetail();
+    toast("本次 CodeBuddy Import 等待已取消；归档与审计记录已保留", "ok");
+  });
+  $("[data-real-close]", container).addEventListener("click", closeMigration);
+}
+
+async function verifyCodeBuddyImport(previousResult) {
+  if (state.migrating || !state.migrationThread) return;
+  state.migrating = true;
+  renderMigrationTimeline("waiting");
+  renderDetail();
+  try {
+    const response = await window.ideHub.migrate(state.migrationThread.id, previousResult.continuation.product);
+    if (!response.ok) throw response.error;
+    state.lastResult = response.data;
+    if (response.data.status === "WAITING_TARGET_IMPORT") {
+      renderCodeBuddyWaitingResult(response.data);
+      toast("尚未在所选 CodeBuddy 版本和工作区 A 中发现这份官方导入，请确认目标已提示成功", "warn");
+      return;
+    }
+    renderMigrationTimeline("done");
+    renderMigrationResult(response.data);
+    toast(`${migrationTarget(response.data.continuation.product).name} 原生历史已完整回读，迁移完成`, "ok");
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    state.lastError = error;
+    renderMigrationTimeline("error");
+    renderMigrationError(error);
+    toast(error.message, "warn");
+  } finally {
+    state.migrating = false;
+    renderDetail();
+  }
 }
 
 function renderMigrationError(error) {
@@ -1030,6 +1307,8 @@ async function scan() {
     state.zcode = response.data.zcode;
     state.pi = response.data.pi;
     state.claude = response.data.claude;
+    state.codeBuddyInternational = response.data.codeBuddyInternational;
+    state.codeBuddyCn = response.data.codeBuddyCn;
     const stillExists = state.threads.some((thread) => thread.id === state.current);
     if (!stillExists) state.current = state.threads[0]?.id ?? null;
     state.selected = new Set([...state.selected].filter((id) => state.threads.some((thread) => thread.id === id)));
@@ -1044,6 +1323,8 @@ async function scan() {
     state.zcode = null;
     state.pi = null;
     state.claude = null;
+    state.codeBuddyInternational = null;
+    state.codeBuddyCn = null;
     state.current = null;
     toast(`扫描失败：${error.message}`, "warn");
   } finally {
@@ -1102,12 +1383,13 @@ function bindEvents() {
     if (state.migrationTarget === "zcode" && state.migrationStep >= 4 && !state.zcodePreview) return;
     if (state.migrationTarget === "pi" && state.migrationStep >= 4 && !state.piPreview) return;
     if (state.migrationTarget === "claude-code" && state.migrationStep >= 4 && !state.claudePreview) return;
+    if ((state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn") && state.migrationStep >= 4 && !state.codeBuddyPreview) return;
     goMigrationStep(state.migrationStep + 1);
   });
   $("[data-wiz-prev]", migrationOverlay).addEventListener("click", () => goMigrationStep(state.migrationStep - 1));
   $$("[data-wiz-close]", migrationOverlay).forEach((button) => button.addEventListener("click", closeMigration));
   $("#migConfirm").addEventListener("change", () => {
-    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview) || (state.migrationTarget === "pi" && !state.piPreview) || (state.migrationTarget === "claude-code" && !state.claudePreview);
+    if (state.migrationStep === 6) $("#ovMigration [data-wiz-next]").disabled = !$("#migConfirm").checked || (state.migrationTarget === "zcode" && !state.zcodePreview) || (state.migrationTarget === "pi" && !state.piPreview) || (state.migrationTarget === "claude-code" && !state.claudePreview) || ((state.migrationTarget === "codebuddy-international" || state.migrationTarget === "codebuddy-cn") && !state.codeBuddyPreview);
   });
 
   for (const id of Object.keys(STUB_WIZARDS)) {

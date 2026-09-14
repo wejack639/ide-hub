@@ -17,7 +17,7 @@
   ],
   "properties": {
     "migrationId": { "type": "string", "format": "uuid" },
-    "status": { "enum": ["DRY_RUN", "COMPLETED"] },
+    "status": { "enum": ["DRY_RUN", "ARCHIVE_READY", "WAITING_TARGET_IMPORT", "CANCELLED", "COMPLETED"] },
     "sourceThreadId": { "type": "string", "minLength": 1 },
     "targetSessionId": { "type": ["string", "null"] },
     "workspace": { "type": "string", "minLength": 1 },
@@ -28,7 +28,7 @@
       "additionalProperties": false,
       "required": ["product", "bundleId"],
       "properties": {
-        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness", "zcode", "pi", "claude-code"] },
+        "product": { "enum": ["qoder-international", "qoder-cn", "cursor", "deepseek-harness", "zcode", "pi", "claude-code", "codebuddy-international", "codebuddy-cn"] },
         "bundleId": {
           "enum": [
             "com.qoder.ide",
@@ -37,7 +37,9 @@
             "@deepseek-ai/dsh",
             "dev.zcode.app",
             "@earendil-works/pi-coding-agent",
-            "@anthropic-ai/claude-code"
+            "@anthropic-ai/claude-code",
+            "com.tencent.codebuddy",
+            "com.tencent.codebuddycn"
           ]
         }
       }
@@ -63,7 +65,24 @@
         "projectionSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "projectedTurnCount": { "type": "integer", "minimum": 1 },
         "projectedMessageCount": { "type": "integer", "minimum": 1 },
-        "lossReport": { "type": "object" }
+        "lossReport": { "type": "object" },
+        "codeBuddy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["archiveId", "archivePath", "archiveBytes", "workspaceHash", "importVerified", "continuationVerified", "continuationRequestCount", "continuationMessageCount", "continuationCompletedRoundCount", "targetHistoryPath"],
+          "properties": {
+            "archiveId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "archivePath": { "type": "string", "minLength": 1 },
+            "archiveBytes": { "type": "integer", "minimum": 1, "maximum": 20971520 },
+            "workspaceHash": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+            "importVerified": { "type": "boolean" },
+            "continuationVerified": { "const": false },
+            "continuationRequestCount": { "type": "integer", "minimum": 0 },
+            "continuationMessageCount": { "type": "integer", "minimum": 0 },
+            "continuationCompletedRoundCount": { "type": "integer", "minimum": 0 },
+            "targetHistoryPath": { "type": ["string", "null"] }
+          }
+        }
       }
     }
   }

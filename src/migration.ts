@@ -68,11 +68,13 @@ import { migratePi } from "./pi/migration.js";
 import { PI_PACKAGE } from "./pi/discovery.js";
 import { migrateClaude } from "./claude/migration.js";
 import { CLAUDE_RUNTIME_ID } from "./claude/discovery.js";
+import { discoverCodeBuddy } from "./codebuddy/discovery.js";
+import { migrateCodeBuddy } from "./codebuddy/migration.js";
 
 export async function runMigration(request: MigrationRequest): Promise<MigrationResult> {
   const migrationId = randomUUID();
   const artifacts = new MigrationArtifacts(migrationId);
-  const codex = new CodexAppServerClient({ networkDisabled: ["zcode", "pi", "claude-code"].includes(request.targetProduct) && process.platform === "darwin" });
+  const codex = new CodexAppServerClient({ networkDisabled: ["zcode", "pi", "claude-code", "codebuddy-international", "codebuddy-cn"].includes(request.targetProduct) && process.platform === "darwin" });
   await artifacts.initialize();
   await artifacts.appendJournal("CREATED", { migrationId });
   await artifacts.writeJson("request.json", request);
@@ -182,6 +184,71 @@ export async function runMigration(request: MigrationRequest): Promise<Migration
         targetProduct: "zcode", targetBundleId: "dev.zcode.app" });
       await artifacts.writeJson("target-result.json", result);
       await artifacts.appendJournal(result.status, { targetSessionId: target.targetSessionId, reused: target.reused });
+      return result;
+    }
+    if (
+      request.targetProduct === "codebuddy-international" ||
+      request.targetProduct === "codebuddy-cn"
+    ) {
+      const installation = await discoverCodeBuddy(request.targetProduct);
+      const mcpBefore = await computeMcpFingerprint(
+        codex,
+        workspace.workspaceCanonical,
+        request.targetProduct,
+      );
+      await artifacts.appendJournal("MCP_BASELINE_CAPTURED", mcpBefore);
+      const target = await migrateCodeBuddy({
+        snapshot,
+        artifacts,
+        targetProduct: request.targetProduct,
+        dryRun: request.dryRun,
+        mcpFingerprintBefore: mcpBefore,
+        installation,
+      });
+      const postConditions = await assertPostConditions(
+        codex,
+        metadata.path,
+        sourceAfterRead,
+        workspace.workspaceCanonical,
+        mcpBefore,
+        request.targetProduct,
+      );
+      await artifacts.appendJournal("POST_CONDITIONS_VERIFIED", postConditions);
+      const result = makeResult({
+        migrationId,
+        status: target.status,
+        sourceThreadId: request.sourceThreadId,
+        targetSessionId: target.targetSessionId,
+        workspace: workspace.workspaceCanonical,
+        artifacts,
+        sourceSnapshotSha256,
+        seed: { ...seed, lossReport: target.projection.lossReport },
+        projectionSha256: sha256Text(stableJson(target.projection)),
+        projection: target.projection,
+        targetProduct: request.targetProduct,
+        targetBundleId: installation.bundleId,
+        codeBuddy: {
+          archiveId: target.archive.data.conversations[0].id,
+          archivePath: target.archivePath,
+          archiveBytes: target.archiveBytes,
+          workspaceHash: target.workspaceHash,
+          importVerified: target.verification !== null,
+          continuationVerified: false,
+          continuationRequestCount: target.verification?.continuationRequestCount ?? 0,
+          continuationMessageCount: target.verification?.continuationMessageCount ?? 0,
+          continuationCompletedRoundCount: target.verification?.continuationCompletedRoundCount ?? 0,
+          targetHistoryPath: target.verification?.targetHistoryPath ?? null,
+        },
+      });
+      await artifacts.writeJson("target-result.json", result);
+      await artifacts.appendJournal(target.status, {
+        targetProduct: request.targetProduct,
+        targetSessionId: target.targetSessionId,
+        archiveId: target.archive.data.conversations[0].id,
+        reused: target.reused,
+        importVerified: target.verification !== null,
+        continuationVerified: false,
+      });
       return result;
     }
 
@@ -969,6 +1036,7 @@ function makeResult(input: {
   projection: { turns: unknown[]; projectedMessageCount: number };
   targetProduct: MigrationResult["continuation"]["product"];
   targetBundleId: MigrationResult["continuation"]["bundleId"];
+  codeBuddy?: NonNullable<MigrationResult["details"]["codeBuddy"]>;
 }): MigrationResult {
   return {
     migrationId: input.migrationId,
@@ -991,6 +1059,7 @@ function makeResult(input: {
       projectedTurnCount: input.projection.turns.length,
       projectedMessageCount: input.projection.projectedMessageCount,
       lossReport: input.seed.lossReport,
+      ...(input.codeBuddy === undefined ? {} : { codeBuddy: input.codeBuddy }),
     },
   };
 }

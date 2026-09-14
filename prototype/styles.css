@@ -201,6 +201,7 @@ code { font-family: var(--mono); font-size: 11.5px; background: rgba(255,255,255
 .prod-tag.claude { background: rgba(217,119,87,0.18); color: #e59275; }
 .prod-tag.zcode { background: rgba(34,195,181,0.16); color: #4fd3c5; }
 .prod-tag.codebuddy { background: rgba(124,111,240,0.18); color: #a79bf5; }
+.prod-tag.codebuddycn { background: rgba(155,116,243,0.18); color: #be9df8; }
 .prod-tag.dsh { background: rgba(53,182,232,0.16); color: #66c7f0; }
 .prod-tag.pi { background: rgba(192,132,252,0.16); color: #cf9dfa; }
 

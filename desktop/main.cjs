@@ -6,6 +6,7 @@ const { pathToFileURL } = require("node:url");
 const APP_ROOT = path.resolve(__dirname, "..");
 const RENDERER_PATH = path.join(APP_ROOT, "prototype", "index.html");
 const RENDERER_URL = pathToFileURL(RENDERER_PATH).href;
+const MIGRATION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 let mainWindow = null;
 let migrationRunning = false;
 
@@ -42,7 +43,7 @@ function handle(channel, operation) {
 }
 
 handle("ide-hub:scan", async () => {
-  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery, zcodeDiscovery, piDiscovery, claudeDiscovery] =
+  const [{ CodexAppServerClient }, { listCodexThreads }, qoderDiscovery, cursorDiscovery, dshDiscovery, zcodeDiscovery, piDiscovery, claudeDiscovery, codeBuddyDiscovery] =
     await Promise.all([
       coreModule("codex/app-server-client.js"),
       coreModule("codex/reader.js"),
@@ -52,6 +53,7 @@ handle("ide-hub:scan", async () => {
       coreModule("zcode/discovery.js"),
       coreModule("pi/discovery.js"),
       coreModule("claude/discovery.js"),
+      coreModule("codebuddy/discovery.js"),
     ]);
   const codex = new CodexAppServerClient({ networkDisabled: process.platform === "darwin" });
   let threads;
@@ -135,7 +137,37 @@ handle("ide-hub:scan", async () => {
       };
     }
   }
-  const [qoder, qoderCn, cursor, dsh, zcode, pi, claude] = await Promise.all([
+  async function scanCodeBuddy(targetProduct) {
+    const profile = codeBuddyDiscovery.CODEBUDDY_PROFILES[targetProduct];
+    try {
+      const installation = await codeBuddyDiscovery.inspectCodeBuddy(targetProduct);
+      return {
+        installed: true,
+        compatible: installation.compatible,
+        compatibilityError: installation.compatibilityError,
+        version: installation.version,
+        bundleId: installation.bundleId,
+        appPath: installation.appPath,
+        productCommit: installation.productCommit,
+        extensionVersion: installation.extensionVersion,
+        extensionSha256: installation.extensionSha256,
+      };
+    } catch (error) {
+      return {
+        installed: false,
+        compatible: false,
+        compatibilityError: error instanceof Error ? error.message : String(error),
+        version: null,
+        bundleId: profile.bundleId,
+        appPath: null,
+        productCommit: null,
+        extensionVersion: null,
+        extensionSha256: null,
+        error: serializeError(error),
+      };
+    }
+  }
+  const [qoder, qoderCn, cursor, dsh, zcode, pi, claude, codeBuddyInternational, codeBuddyCn] = await Promise.all([
     scanQoder(qoderDiscovery.discoverQoderInternational, "com.qoder.ide"),
     scanQoder(qoderDiscovery.discoverQoderCn, "com.aliyun.lingma.ide"),
     scanCursor(),
@@ -143,6 +175,8 @@ handle("ide-hub:scan", async () => {
     zcodeDiscovery.inspectZcode().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
     piDiscovery.inspectPi().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
     claudeDiscovery.inspectClaude().catch(error => ({ installed: false, compatible: false, compatibilityError: error.message, error: serializeError(error) })),
+    scanCodeBuddy("codebuddy-international"),
+    scanCodeBuddy("codebuddy-cn"),
   ]);
 
   return {
@@ -154,6 +188,8 @@ handle("ide-hub:scan", async () => {
     zcode,
     pi,
     claude,
+    codeBuddyInternational,
+    codeBuddyCn,
     threads: threads.map((thread) => ({
       id: thread.id,
       name: thread.name,
@@ -220,6 +256,93 @@ handle("ide-hub:preview-claude", async (sourceThreadId) => {
   return { result, projection, plan };
 });
 
+handle("ide-hub:preview-codebuddy", async (sourceThreadId, targetProduct) => {
+  if (targetProduct !== "codebuddy-international" && targetProduct !== "codebuddy-cn") {
+    throw new Error("CodeBuddy targetProduct is invalid");
+  }
+  const [{ runMigration }, { validateMigrationRequest }] = await Promise.all([coreModule("migration.js"), coreModule("request.js")]);
+  const result = await runMigration(validateMigrationRequest({ sourceProduct: "codex", targetProduct, sourceThreadId,
+    contextPolicy: "goal-recent-plan-v1", dryRun: true }));
+  const projection = JSON.parse(await readFile(path.join(result.details.artifactsDir, "codebuddy-projection.json"), "utf8"));
+  const plan = JSON.parse(await readFile(path.join(result.details.artifactsDir, "target-plan.json"), "utf8"));
+  return { result, projection, plan };
+});
+
+handle("ide-hub:reveal-codebuddy-archive", async (migrationId) => {
+  if (typeof migrationId !== "string" || !MIGRATION_ID_PATTERN.test(migrationId)) throw new Error("migrationId is invalid");
+  const { defaultDataRoot } = await coreModule("util/fs.js");
+  const artifactsDir = path.join(defaultDataRoot(), "migrations", migrationId);
+  const result = JSON.parse(await readFile(path.join(artifactsDir, "target-result.json"), "utf8"));
+  if (result?.continuation?.product !== "codebuddy-international" && result?.continuation?.product !== "codebuddy-cn") throw new Error("migration is not a CodeBuddy task");
+  const archivePath = result?.details?.codeBuddy?.archivePath;
+  const archiveRelativePath = typeof archivePath === "string" ? path.relative(artifactsDir, archivePath) : "";
+  if (
+    typeof archivePath !== "string" ||
+    archiveRelativePath === "" ||
+    archiveRelativePath.startsWith("..") ||
+    path.isAbsolute(archiveRelativePath)
+  ) throw new Error("CodeBuddy archive path is invalid");
+  await stat(archivePath);
+  const { revealCodeBuddyArchive } = await coreModule("codebuddy/discovery.js");
+  await revealCodeBuddyArchive(archivePath);
+  return { migrationId, archivePath };
+});
+
+handle("ide-hub:cancel-codebuddy-migration", async (migrationId) => {
+  if (migrationRunning) throw new Error("请等待当前迁移结束后再取消");
+  const { cancelCodeBuddyWaitingMigration } = await coreModule("codebuddy/migration.js");
+  return cancelCodeBuddyWaitingMigration(migrationId);
+});
+
+handle("ide-hub:prepare-codebuddy-rollback", async (workspace, targetProduct, archiveId, targetSessionId, allowDeleteContinuation) => {
+  if (migrationRunning) throw new Error("请等待当前迁移结束后再恢复");
+  if (typeof workspace !== "string" || !path.isAbsolute(workspace)) throw new Error("workspace must be an absolute path");
+  if (targetProduct !== "codebuddy-international" && targetProduct !== "codebuddy-cn") {
+    throw new Error("CodeBuddy targetProduct is invalid");
+  }
+  if (typeof archiveId !== "string" || typeof targetSessionId !== "string") {
+    throw new Error("CodeBuddy rollback identity is invalid");
+  }
+  const canonicalWorkspace = await realpath(workspace);
+  const [{ discoverCodeBuddy }, { prepareCodeBuddyRollback }] = await Promise.all([
+    coreModule("codebuddy/discovery.js"),
+    coreModule("codebuddy/migration.js"),
+  ]);
+  const installation = await discoverCodeBuddy(targetProduct);
+  return prepareCodeBuddyRollback({
+    targetProduct,
+    workspace: canonicalWorkspace,
+    archiveId,
+    targetSessionId,
+    allowDeleteContinuation: allowDeleteContinuation === true,
+    installation,
+  });
+});
+
+handle("ide-hub:confirm-codebuddy-rollback", async (workspace, targetProduct, archiveId, targetSessionId) => {
+  if (migrationRunning) throw new Error("请等待当前迁移结束后再恢复");
+  if (typeof workspace !== "string" || !path.isAbsolute(workspace)) throw new Error("workspace must be an absolute path");
+  if (targetProduct !== "codebuddy-international" && targetProduct !== "codebuddy-cn") {
+    throw new Error("CodeBuddy targetProduct is invalid");
+  }
+  if (typeof archiveId !== "string" || typeof targetSessionId !== "string") {
+    throw new Error("CodeBuddy rollback identity is invalid");
+  }
+  const canonicalWorkspace = await realpath(workspace);
+  const [{ discoverCodeBuddy }, { confirmCodeBuddyRollbackDeleted }] = await Promise.all([
+    coreModule("codebuddy/discovery.js"),
+    coreModule("codebuddy/migration.js"),
+  ]);
+  const installation = await discoverCodeBuddy(targetProduct);
+  return confirmCodeBuddyRollbackDeleted({
+    targetProduct,
+    workspace: canonicalWorkspace,
+    archiveId,
+    targetSessionId,
+    installation,
+  });
+});
+
 handle("ide-hub:rollback-claude", async (workspace, targetSessionId) => {
   if (migrationRunning) throw new Error("请等待当前迁移结束后再回滚");
   const [{ inspectClaude }, { resolveClaudeTarget, rollbackClaudeMigration }] = await Promise.all([
@@ -276,6 +399,18 @@ handle("ide-hub:open-target", async (workspace, targetProduct, targetSessionId) 
     const sessionPath = await resolveClaudeTarget(installation, canonicalWorkspace, targetSessionId);
     await openClaudeSession(installation, canonicalWorkspace, sessionPath, targetSessionId);
     return { workspace: canonicalWorkspace, targetProduct, targetSessionId, openMode: "terminal-session" };
+  }
+  if (targetProduct === "codebuddy-international" || targetProduct === "codebuddy-cn") {
+    const { discoverCodeBuddy, openCodeBuddyWorkspace } = await coreModule("codebuddy/discovery.js");
+    const installation = await discoverCodeBuddy(targetProduct);
+    openCodeBuddyWorkspace(installation, canonicalWorkspace);
+    return {
+      workspace: canonicalWorkspace,
+      targetProduct,
+      targetSessionId,
+      openMode: "project-and-native-history",
+      historyHint: targetSessionId ? `在 History 中按 Session ID ${targetSessionId} 打开` : "在 History 中执行 Import",
+    };
   }
   if (targetProduct === "pi") {
     if (typeof targetSessionId !== "string") throw new Error("Pi targetSessionId is required");
