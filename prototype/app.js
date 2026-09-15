@@ -56,7 +56,6 @@ const MIGRATION_STEPS = ["源会话", "目标", "空闲检查", "投影预览", 
 const STUB_WIZARDS = {
   ovExport: { label: "ZIP 导出", steps: ["会话与工作区", "包含项", "预览", "生成"] },
   ovImport: { label: "ZIP 导入", steps: ["ZIP 检查", "路径映射", "目标 Agent", "写入执行"] },
-  ovMcpMigration: { label: "MCP 配置迁移", steps: ["源与目标", "配置差异", "执行"] },
 };
 
 const state = {
@@ -91,6 +90,20 @@ const state = {
   migrationStarted: false,
   lastResult: null,
   lastError: null,
+  mcpScan: null,
+  mcpSelected: new Set(),
+  mcpSearch: "",
+  mcpTarget: null,
+  mcpPlan: null,
+  mcpResolutions: {},
+  mcpLoading: false,
+  mcpPlanning: false,
+  mcpApplying: false,
+  mcpReceipt: null,
+  mcpJobs: [],
+  mcpScope: "user",
+  mcpTargetScope: "user",
+  mcpWorkspace: null,
 };
 
 function migrationTarget(product = state.migrationTarget) {
@@ -517,6 +530,8 @@ function switchView(view) {
   state.view = view;
   $$(".rail-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $$(".view").forEach((item) => item.classList.toggle("active", item.id === `view-${view}`));
+  if (view === "mcp" && !state.mcpScan && !state.mcpLoading) void scanMcp(false);
+  if (view === "jobs") renderJobs();
 }
 
 function buildStepBar(overlay, steps, active = 1, visited = new Set([1])) {
@@ -1224,28 +1239,481 @@ function closeStubWizard(overlay) {
   toast(`${STUB_WIZARDS[overlay.id].label}尚未实现，未产生任何写入`, "warn");
 }
 
-function renderUnimplementedViews() {
-  $("#mcpCount").textContent = "未实现";
-  $("#mcpServerList").innerHTML = '<div class="banner banner-warn"><b>MCP 扫描尚未实现</b><br>此模块是全局产品配置，独立于任何会话迁移。</div>';
-  $("#mcpDetail").innerHTML = `
-    <div class="mcpd-head"><h2>全局 MCP 配置</h2><span class="badge b-warn">未实现</span></div>
-    <div class="mcpd-sub">保留 prototype 的独立全局配置页面；后续接入各产品 adapter。</div>
-    <div class="banner banner-info mcp-global-banner">MCP 迁移的任务粒度是“源产品 → 目标产品”，只需按配置迁移一次，不随每个会话重复携带。</div>
-    <div class="card"><div class="card-title">计划保留的操作入口</div><ul class="plain-list"><li>扫描各产品全局 MCP 配置</li><li>查看字段映射和冲突 diff</li><li>独立备份、应用、校验与回滚</li><li>导入 / 导出独立配置包</li></ul></div>`;
-  $("#mcpSearchInput").disabled = true;
-  $$("#view-mcp .btn").forEach((button) => {
-    button.classList.remove("btn-primary");
-    button.classList.add("btn-ghost");
-    if (!button.textContent.includes("未实现")) button.textContent = `${button.textContent.trim()} · 未实现`;
-  });
+function visibleMcpServers() {
+  const query = state.mcpSearch.trim().toLocaleLowerCase();
+  const servers = state.mcpScan?.servers ?? [];
+  if (!query) return servers;
+  return servers.filter((server) => `${server.name}\n${server.command ?? ""}\n${server.url ?? ""}\n${server.transport}`
+    .toLocaleLowerCase()
+    .includes(query));
+}
 
-  $("#jobsTable").innerHTML = `
-    <div class="job-row">
-      <div class="job-main static-job">
-        <span class="badge b-warn">未实现</span>
-        <div class="job-body"><b>任务持久化与任务列表尚未接入</b><div class="jb-sub">当前真实迁移结果只在本次应用会话和本地 migration artifacts 中可见。</div></div>
+function mcpStatusBadge(status) {
+  const definitions = {
+    add: ["新增", "b-ok"],
+    same: ["已一致", "b-info"],
+    conflict: ["同名冲突", "b-warn"],
+    skip: ["跳过", "b-muted"],
+    rename: ["重命名", "b-info"],
+    merge: ["合并", "b-info"],
+    replace: ["替换", "b-warn"],
+    unsupported: ["不支持", "b-warn"],
+  };
+  const [label, className] = definitions[status] ?? [status, "b-muted"];
+  return `<span class="badge ${className}">${label}</span>`;
+}
+
+function renderMcp() {
+  const list = $("#mcpServerList");
+  const detail = $("#mcpDetail");
+  const scopeSelect = $("#mcpScopeSelect");
+  const workspaceButton = $("#btnMcpWorkspace");
+  const workspaceLabel = $("#mcpWorkspaceLabel");
+  scopeSelect.value = state.mcpScope;
+  scopeSelect.disabled = state.mcpLoading || state.mcpApplying || state.mcpScan?.sourceKind === "mcp-bundle";
+  const workspaceRequired = state.mcpScope === "project" || state.mcpTargetScope !== "user";
+  workspaceButton.hidden = !workspaceRequired;
+  workspaceButton.disabled = state.mcpLoading || state.mcpApplying;
+  workspaceLabel.textContent = workspaceRequired
+    ? state.mcpWorkspace ? `项目目录：${state.mcpWorkspace}` : "尚未选择项目目录"
+    : "Codex 用户级有效配置";
+  if (state.mcpLoading) {
+    $("#mcpCount").textContent = "扫描中";
+    list.innerHTML = '<div class="list-placeholder"><span class="inline-spinner"></span>正在读取 Codex 当前有效 MCP 配置…</div>';
+    detail.innerHTML = '<div class="detail-empty"><span class="inline-spinner"></span><h3>扫描全局 MCP 配置</h3></div>';
+    return;
+  }
+  if (!state.mcpScan) {
+    $("#mcpCount").textContent = "未扫描";
+    list.innerHTML = '<div class="list-placeholder">点击“重新扫描 Codex MCP”读取真实配置。</div>';
+    detail.innerHTML = `
+      <div class="mcpd-head"><h2>全局 MCP 配置</h2><span class="badge b-info">独立功能</span></div>
+      <div class="mcpd-sub">与会话迁移完全分离，不会随会话重复写入。</div>`;
+    return;
+  }
+
+  const visible = visibleMcpServers();
+  $("#mcpCount").textContent = `${state.mcpScan.servers.length} 个 · 已选 ${state.mcpSelected.size}`;
+  list.innerHTML = visible.length === 0
+    ? '<div class="list-placeholder">没有匹配的 MCP。</div>'
+    : visible.map((server) => `
+      <label class="mcp-server-item ${state.mcpSelected.has(server.id) ? "active" : ""}">
+        <input type="checkbox" data-mcp-id="${esc(server.id)}" ${state.mcpSelected.has(server.id) ? "checked" : ""}>
+        <span class="ms-main">
+          <span class="ms-name">${esc(server.name)}</span>
+          <span class="ms-sub">${esc(server.scope)} · ${esc(server.transport)} · ${server.enabled ? "已启用" : "已禁用"}${server.overrides?.length ? " · 覆盖低优先级同名项" : ""}</span>
+        </span>
+        <span class="presence-dot" title="Codex">C</span>
+      </label>`).join("");
+
+  const targets = state.mcpScan.targets;
+  if (!targets.some((target) => target.targetProduct === state.mcpTarget && target.supported)) {
+    state.mcpTarget = targets.find((target) => target.supported)?.targetProduct ?? null;
+  }
+  const selectedTarget = targets.find((target) => target.targetProduct === state.mcpTarget) ?? null;
+  const options = targets.map((target) => {
+    const suffix = target.supported ? "" : ` — ${target.reason ?? "不可用"}`;
+    return `<option value="${esc(target.targetProduct)}" ${target.targetProduct === state.mcpTarget ? "selected" : ""} ${target.supported ? "" : "disabled"}>${esc(target.displayName + suffix)}</option>`;
+  }).join("");
+  const sourceLabel = state.mcpScan.sourceKind === "mcp-bundle" ? "已导入 MCP 配置包" : "Codex 当前有效配置";
+  const selectionHint = state.mcpSelected.size === 0
+    ? '<div class="banner banner-warn">请先在左侧勾选至少一个需要迁移的 MCP。</div>'
+    : `<div class="banner banner-info">本次只迁移已勾选的 ${state.mcpSelected.size} 个 MCP；未勾选项和其他目标应用不会改变。</div>`;
+  const planHtml = state.mcpPlan ? renderMcpPlan(state.mcpPlan) : "";
+  const resultHtml = state.mcpReceipt ? renderMcpReceipt(state.mcpReceipt) : "";
+  detail.innerHTML = `
+    <div class="mcpd-head">
+      <h2>Codex MCP 迁移</h2>
+      <span class="badge b-ok">真实配置</span>
+    </div>
+    <div class="mcpd-sub">${esc(sourceLabel)} · 源 ${esc(state.mcpScan.scope)} → 目标 ${esc(state.mcpTargetScope)} · ${esc(state.mcpScan.sourcePath)}</div>
+    <div class="banner banner-info mcp-global-banner">这是产品级配置任务，与任何会话无关。一次任务只写一个目标应用。</div>
+    <div class="card mcp-target-card">
+      <div class="card-title">目标应用（单选）</div>
+      <select class="mcp-target-select" id="mcpTargetSelect" ${state.mcpApplying ? "disabled" : ""}>
+        ${state.mcpTarget ? options : '<option value="">没有可用目标</option>'}
+      </select>
+      <div class="card-title mcp-target-scope-title">目标作用域</div>
+      <select class="mcp-target-select" id="mcpTargetScopeSelect" ${state.mcpLoading || state.mcpApplying ? "disabled" : ""}>
+        <option value="user" ${state.mcpTargetScope === "user" ? "selected" : ""}>全局（user）</option>
+        <option value="project" ${state.mcpTargetScope === "project" ? "selected" : ""}>项目共享（project）</option>
+        <option value="local" ${state.mcpTargetScope === "local" ? "selected" : ""}>本机项目（local）</option>
+      </select>
+      <div class="muted-note">${esc(selectedTarget?.targetConfigPath ?? selectedTarget?.reason ?? "未选择目标")}</div>
+    </div>
+    ${selectionHint}
+    <div class="mcp-action-row">
+      <button class="btn btn-ghost" id="mcpPreviewButton" ${state.mcpSelected.size > 0 && state.mcpTarget && !state.mcpPlanning && !state.mcpApplying ? "" : "disabled"}>${state.mcpPlanning ? "正在生成差异…" : "预览所选 MCP 差异"}</button>
+      <button class="btn btn-primary" id="mcpApplyButton" ${state.mcpPlan?.canApply && !state.mcpApplying ? "" : "disabled"}>${state.mcpApplying ? "迁移执行中…" : "确定迁移"}</button>
+    </div>
+    ${planHtml}
+    ${resultHtml}`;
+
+  $$("#mcpServerList input[data-mcp-id]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.mcpSelected.add(checkbox.dataset.mcpId);
+      else state.mcpSelected.delete(checkbox.dataset.mcpId);
+      state.mcpPlan = null;
+      state.mcpReceipt = null;
+      state.mcpResolutions = {};
+      renderMcp();
+    });
+  });
+  $("#mcpTargetSelect")?.addEventListener("change", (event) => {
+    state.mcpTarget = event.target.value;
+    state.mcpPlan = null;
+    state.mcpReceipt = null;
+    state.mcpResolutions = {};
+    renderMcp();
+  });
+  $("#mcpTargetScopeSelect")?.addEventListener("change", (event) => void changeMcpTargetScope(event.target.value));
+  $("#mcpPreviewButton")?.addEventListener("click", () => void previewMcp());
+  $("#mcpApplyButton")?.addEventListener("click", () => void applyMcp());
+  $("#mcpRollbackButton")?.addEventListener("click", () => void rollbackMcp(state.mcpReceipt?.mcpMigrationId));
+  $$("[data-mcp-strategy]", detail).forEach((select) => {
+    select.addEventListener("change", () => {
+      const serverId = select.dataset.mcpStrategy;
+      const strategy = select.value;
+      if (!strategy) delete state.mcpResolutions[serverId];
+      else {
+        const diff = state.mcpPlan.diffs.find((item) => item.serverId === serverId);
+        state.mcpResolutions[serverId] = {
+          strategy,
+          ...(strategy === "rename" ? { renameTo: `${diff?.sourceName ?? "mcp"}-2` } : {}),
+        };
+      }
+      void previewMcp();
+    });
+  });
+  $$("[data-mcp-rename]", detail).forEach((input) => {
+    input.addEventListener("change", () => {
+      const serverId = input.dataset.mcpRename;
+      state.mcpResolutions[serverId] = { strategy: "rename", renameTo: input.value.trim() };
+      void previewMcp();
+    });
+  });
+  $$("[data-mcp-field]", detail).forEach((select) => {
+    select.addEventListener("change", () => {
+      const serverId = select.dataset.mcpServer;
+      const resolution = state.mcpResolutions[serverId] ?? { strategy: "merge", fieldChoices: {} };
+      resolution.strategy = "merge";
+      resolution.fieldChoices = { ...(resolution.fieldChoices ?? {}), [select.dataset.mcpField]: select.value };
+      state.mcpResolutions[serverId] = resolution;
+      void previewMcp();
+    });
+  });
+}
+
+function renderMcpPlan(plan) {
+  const cards = plan.diffs.map((diff) => {
+    const resolution = state.mcpResolutions[diff.serverId] ?? null;
+    const strategy = resolution?.strategy ?? "";
+    const strategyOptions = diff.availableStrategies.map((value) => `<option value="${value}" ${strategy === value ? "selected" : ""}>${({ skip: "跳过", rename: "重命名", merge: "合并", replace: "替换" })[value]}</option>`).join("");
+    const fields = diff.fields.length === 0 ? "" : `
+      <div class="mcp-field-diffs">
+        ${diff.fields.map((field) => `
+          <div class="mcp-field-row">
+            <code>${esc(field.field)}</code>
+            <span>${esc(field.sourcePreview)}</span><span>→</span><span>${esc(field.targetPreview)}</span>
+            ${strategy === "merge" && field.conflict ? `
+              <select data-mcp-field="${esc(field.field)}" data-mcp-server="${esc(diff.serverId)}">
+                <option value="">选择保留值</option>
+                <option value="source" ${resolution?.fieldChoices?.[field.field] === "source" ? "selected" : ""}>使用 Codex</option>
+                <option value="target" ${resolution?.fieldChoices?.[field.field] === "target" ? "selected" : ""}>保留目标</option>
+              </select>` : ""}
+          </div>`).join("")}
+      </div>`;
+    const controls = diff.availableStrategies.length === 0 ? "" : `
+      <div class="mcpw-strategy">
+        <span class="st-label">同名策略</span>
+        <select class="mcp-strategy-select" data-mcp-strategy="${esc(diff.serverId)}">
+          <option value="">请选择</option>${strategyOptions}
+        </select>
+        ${strategy === "rename" ? `<input class="mcp-rename-input" data-mcp-rename="${esc(diff.serverId)}" value="${esc(resolution.renameTo ?? "")}" placeholder="新名称">` : ""}
+      </div>`;
+    return `
+      <div class="mcp-wcard ${diff.status === "conflict" || diff.status === "unsupported" ? "conflict" : ""}">
+        <div class="mcpw-head"><span class="mcpw-name">${esc(diff.sourceName)}</span>${mcpStatusBadge(diff.status)}<span class="badge b-muted">${esc(diff.transport)}</span></div>
+        <div class="mcpw-foot ${diff.status === "conflict" || diff.status === "unsupported" ? "" : "ok"}">${esc(diff.reason ?? `目标名称：${diff.targetName}`)}</div>
+        ${fields}${controls}
+      </div>`;
+  }).join("");
+  const manualActions = plan.manualActions?.length
+    ? `<div class="banner banner-warn">迁移后的人工动作：${plan.manualActions.map((item) => esc(item)).join("；")}</div>`
+    : "";
+  return `
+    <div class="mcp-plan-head"><div class="card-title">写入差异</div><span class="mono muted">${esc(plan.targetConfigPath)}</span></div>
+    <div class="mcp-diff-list">${cards}</div>
+    ${manualActions}
+    ${plan.canApply ? '<div class="banner banner-info">差异已完整解决。点击“确定迁移”后才会备份并写入目标。</div>' : '<div class="banner banner-warn">仍有冲突或不支持项，当前不能执行迁移。</div>'}`;
+}
+
+function renderMcpReceipt(receipt) {
+  const nativePending = receipt.verification.filter((item) =>
+    (item.nativeRecognition ?? "pending") !== "passed" && (item.nativeRecognition ?? "pending") !== "skipped"
+  );
+  const handshakeWarnings = receipt.verification.filter((item) => item.handshake !== "passed");
+  const headline = receipt.status === "ROLLED_BACK"
+    ? "MCP 配置已回滚"
+    : nativePending.length > 0
+      ? "MCP 配置已写入，目标应用识别待确认"
+      : receipt.status === "COMPLETED"
+        ? "目标应用已识别 MCP"
+        : "目标应用已识别，MCP 连接验证有提示";
+  return `
+    <div class="result-card mcp-result-card">
+      <div class="result-icon ${receipt.status === "COMPLETED" ? "ok" : ""}">${receipt.status === "ROLLED_BACK" ? "↶" : receipt.status === "COMPLETED" ? "✓" : "!"}</div>
+      <div>
+        <h4>${headline}</h4>
+        <p class="muted">${esc(migrationTarget(receipt.targetProduct).name)} · ${esc(receipt.targetScope)} scope · ${receipt.selectedServerIds.length} 个已勾选 MCP · ${nativePending.length} 项原生识别待确认 · ${handshakeWarnings.length} 项连接验证跳过或失败</p>
       </div>
-    </div>`;
+    </div>
+    <div class="mcp-verification-list">
+      ${receipt.verification.map((item) => {
+        const nativeRecognition = item.nativeRecognition ?? "pending";
+        const verified = item.configRoundTrip && (nativeRecognition === "passed" || nativeRecognition === "skipped");
+        return `<div class="verif-row"><span class="vi ${verified ? "ok" : "warn"}">${verified ? "✓" : "!"}</span><span><b>${esc(item.name)}</b> · 配置重读：${item.configRoundTrip ? "通过" : "失败"} · 原生识别：${esc(item.nativeDetail ?? "旧任务未执行目标应用识别 Gate")} · 连接验证：${esc(item.detail)}</span></div>`;
+      }).join("")}
+    </div>
+    ${receipt.status === "ROLLED_BACK" || !receipt.changed ? "" : '<div class="result-actions"><button class="btn btn-danger-ghost" id="mcpRollbackButton">回滚本次目标配置</button></div>'}`;
+}
+
+async function scanMcp(useCodex) {
+  if (state.mcpLoading || state.mcpApplying) return;
+  if ((state.mcpScope === "project" || state.mcpTargetScope !== "user") && !state.mcpWorkspace) {
+    const selected = await chooseMcpWorkspace();
+    if (!selected) return;
+  }
+  state.mcpLoading = true;
+  state.mcpPlan = null;
+  state.mcpReceipt = null;
+  renderMcp();
+  try {
+    if (!window.ideHub?.scanMcp) throw new Error("Electron MCP IPC 未加载");
+    const [response, jobs] = await Promise.all([
+      window.ideHub.scanMcp({
+        scope: state.mcpScope,
+        targetScope: state.mcpTargetScope,
+        ...(state.mcpWorkspace ? { workspace: state.mcpWorkspace } : {}),
+        useCodex: useCodex === true,
+      }),
+      window.ideHub.listMcpJobs(),
+    ]);
+    if (!response.ok) throw response.error;
+    state.mcpScan = response.data;
+    state.mcpScope = response.data.scope;
+    state.mcpTargetScope = response.data.targetScope;
+    state.mcpWorkspace = response.data.workspace;
+    state.mcpJobs = jobs.ok ? jobs.data : [];
+    state.mcpSelected = new Set([...state.mcpSelected].filter((id) => state.mcpScan.servers.some((server) => server.id === id)));
+    state.mcpTarget = state.mcpScan.targets.find((target) => target.targetProduct === state.mcpTarget && target.supported)?.targetProduct
+      ?? state.mcpScan.targets.find((target) => target.supported)?.targetProduct
+      ?? null;
+    state.mcpResolutions = {};
+    toast(`已读取 ${state.mcpScan.servers.length} 个真实 MCP 配置`, "ok");
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    state.mcpScan = null;
+    state.mcpSelected.clear();
+    toast(`MCP 扫描失败：${error.message}`, "warn");
+  } finally {
+    state.mcpLoading = false;
+    renderMcp();
+    renderJobs();
+  }
+}
+
+async function previewMcp() {
+  if (!state.mcpScan || !state.mcpTarget || state.mcpSelected.size === 0 || state.mcpPlanning || state.mcpApplying) return;
+  state.mcpPlanning = true;
+  renderMcp();
+  try {
+    const response = await window.ideHub.planMcp({
+      sourceProduct: "codex",
+      targetProduct: state.mcpTarget,
+      selectedServerIds: [...state.mcpSelected],
+      scope: state.mcpScan.scope,
+      targetScope: state.mcpTargetScope,
+      ...(state.mcpScan.workspace ? { workspace: state.mcpScan.workspace } : {}),
+      resolutions: state.mcpResolutions,
+    });
+    if (!response.ok) throw response.error;
+    state.mcpPlan = response.data;
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    state.mcpPlan = null;
+    toast(`无法生成 MCP 差异：${error.message}`, "warn");
+  } finally {
+    state.mcpPlanning = false;
+    renderMcp();
+  }
+}
+
+async function applyMcp() {
+  if (!state.mcpPlan?.canApply || state.mcpApplying) return;
+  state.mcpApplying = true;
+  renderMcp();
+  try {
+    const response = await window.ideHub.applyMcp(state.mcpPlan);
+    if (!response.ok) throw response.error;
+    state.mcpReceipt = response.data;
+    state.mcpPlan = null;
+    const jobs = await window.ideHub.listMcpJobs();
+    if (jobs.ok) state.mcpJobs = jobs.data;
+    const fullyVerified = response.data.status === "COMPLETED";
+    toast(
+      fullyVerified
+        ? `已将 ${response.data.selectedServerIds.length} 个所选 MCP 迁移到 ${migrationTarget(response.data.targetProduct).name}，目标应用已识别`
+        : `MCP 配置已写入 ${migrationTarget(response.data.targetProduct).name}，但目标应用识别或连接仍待确认`,
+      fullyVerified ? "ok" : "warn",
+    );
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    toast(`MCP 迁移失败：${error.message}`, "warn");
+  } finally {
+    state.mcpApplying = false;
+    renderMcp();
+    renderJobs();
+  }
+}
+
+async function rollbackMcp(mcpMigrationId) {
+  if (!mcpMigrationId || state.mcpApplying) return;
+  if (!window.confirm("仅恢复这次 MCP 迁移写入前的目标配置。目标文件迁移后如有外部修改会拒绝覆盖。确定回滚？")) return;
+  state.mcpApplying = true;
+  renderMcp();
+  try {
+    const response = await window.ideHub.rollbackMcp(mcpMigrationId);
+    if (!response.ok) throw response.error;
+    if (state.mcpReceipt?.mcpMigrationId === mcpMigrationId) state.mcpReceipt = response.data;
+    const jobs = await window.ideHub.listMcpJobs();
+    if (jobs.ok) state.mcpJobs = jobs.data;
+    toast("目标 MCP 配置已从本次备份恢复", "ok");
+  } catch (rawError) {
+    const error = normalizeError(rawError);
+    toast(`MCP 回滚失败：${error.message}`, "warn");
+  } finally {
+    state.mcpApplying = false;
+    renderMcp();
+    renderJobs();
+  }
+}
+
+async function importMcpBundle() {
+  if (state.mcpApplying) return;
+  const response = await window.ideHub.importMcp();
+  if (!response.ok) return toast(`配置包导入失败：${response.error.message}`, "warn");
+  if (response.data.cancelled) return;
+  state.mcpScan = response.data.scan;
+  state.mcpScope = state.mcpScan.scope;
+  state.mcpTargetScope = state.mcpScan.targetScope;
+  state.mcpWorkspace = state.mcpScan.workspace;
+  state.mcpSelected.clear();
+  state.mcpPlan = null;
+  state.mcpReceipt = null;
+  state.mcpResolutions = {};
+  state.mcpTarget = state.mcpScan.targets.find((target) => target.supported)?.targetProduct ?? null;
+  renderMcp();
+  toast(`已导入配置包：${state.mcpScan.servers.length} 个 MCP，可重新勾选`, "ok");
+}
+
+async function chooseMcpWorkspace() {
+  const response = await window.ideHub.chooseMcpWorkspace();
+  if (!response.ok) {
+    toast(`项目目录选择失败：${response.error.message}`, "warn");
+    return false;
+  }
+  if (response.data.cancelled) return false;
+  state.mcpWorkspace = response.data.workspace;
+  return true;
+}
+
+async function changeMcpScope(scope) {
+  if (scope === "project") {
+    state.mcpScope = "project";
+    if (!state.mcpWorkspace && !await chooseMcpWorkspace()) {
+      state.mcpScope = state.mcpScan?.scope ?? "user";
+      renderMcp();
+      return;
+    }
+  } else {
+    state.mcpScope = "user";
+    if (state.mcpTargetScope === "user") state.mcpWorkspace = null;
+  }
+  state.mcpSelected.clear();
+  state.mcpPlan = null;
+  state.mcpReceipt = null;
+  state.mcpResolutions = {};
+  await scanMcp(true);
+}
+
+async function changeMcpTargetScope(scope) {
+  const previous = state.mcpTargetScope;
+  state.mcpTargetScope = scope;
+  if (scope !== "user" && !state.mcpWorkspace && !await chooseMcpWorkspace()) {
+    state.mcpTargetScope = previous;
+    renderMcp();
+    return;
+  }
+  if (scope === "user" && state.mcpScope === "user") state.mcpWorkspace = null;
+  state.mcpPlan = null;
+  state.mcpReceipt = null;
+  state.mcpResolutions = {};
+  await scanMcp(state.mcpScan?.sourceKind !== "mcp-bundle");
+}
+
+async function exportMcpBundle() {
+  if (!state.mcpScan || state.mcpSelected.size === 0) {
+    toast("请先勾选需要导出的 MCP", "warn");
+    return;
+  }
+  const response = await window.ideHub.exportMcp({
+    selectedServerIds: [...state.mcpSelected],
+    scope: state.mcpScan.scope,
+    ...(state.mcpScan.workspace ? { workspace: state.mcpScan.workspace } : {}),
+  });
+  if (!response.ok) return toast(`配置包导出失败：${response.error.message}`, "warn");
+  if (response.data.cancelled) return;
+  toast(`已导出 ${response.data.serverCount} 个 MCP 配置`, "ok");
+}
+
+function renderJobs() {
+  const table = $("#jobsTable");
+  if (!table) return;
+  if (state.mcpJobs.length === 0) {
+    table.innerHTML = '<div class="job-row"><div class="job-main static-job"><span class="badge b-muted">暂无</span><div class="job-body"><b>暂无 MCP 配置任务</b><div class="jb-sub">会话任务与 MCP 配置任务保持独立。</div></div></div></div>';
+    return;
+  }
+  table.innerHTML = state.mcpJobs.map((job) => {
+    const statusLabels = {
+      COMPLETED: "已完成",
+      COMPLETED_WITH_WARNINGS: "已完成 · 有提示",
+      ROLLED_BACK: "已回滚",
+      ROLLED_BACK_AFTER_FAILURE: "失败后已恢复",
+      RECOVERED_NO_CHANGE: "重启恢复 · 未改动",
+      RECOVERED_ROLLBACK: "重启恢复 · 已回滚",
+      RECOVERY_CONFLICT: "恢复冲突",
+    };
+    const badgeClass = job.status === "RECOVERY_CONFLICT" || job.status === "COMPLETED_WITH_WARNINGS"
+      ? "b-warn"
+      : job.status === "COMPLETED"
+        ? "b-ok"
+        : "b-muted";
+    return `
+      <div class="job-row">
+        <div class="job-main static-job">
+          <span class="badge ${badgeClass}">${esc(statusLabels[job.status] ?? job.status)}</span>
+          <div class="job-body"><b>Codex → ${esc(migrationTarget(job.targetProduct).name)}</b><div class="jb-sub">${esc(job.targetScope ?? "user")} scope · ${job.selectedServerCount} 个已勾选 MCP · ${formatTime(job.completedAt)} · ${esc(job.targetConfigPath)}</div>${job.failure ? `<div class="jb-sub warn">失败阶段：${esc(job.failure.stage)} · ${esc(job.failure.code)} · ${esc(job.failure.message)}</div>` : ""}</div>
+          ${job.canRollback ? `<button class="btn btn-danger-ghost btn-sm" data-job-mcp-rollback="${esc(job.mcpMigrationId)}">回滚</button>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+  $$('[data-job-mcp-rollback]', table).forEach((button) => button.addEventListener("click", () => void rollbackMcp(button.dataset.jobMcpRollback)));
+}
+
+function renderUnimplementedViews() {
+  renderMcp();
+  renderJobs();
 
   const settingsCards = $$("#view-settings .card");
   const dataValues = $$("#view-settings .card:nth-of-type(2) .kv-v");
@@ -1255,7 +1723,7 @@ function renderUnimplementedViews() {
   });
   $$("#view-settings input:not([checked])").forEach((input) => { input.disabled = true; });
   const about = settingsCards.at(-1)?.querySelector(".card-p");
-  if (about) about.textContent = "IDE Hub 0.1.0 · Electron 本地桌面壳 + TypeScript 迁移核心。当前已实现 Codex → Qoder 国际版 / Qoder CN / Cursor 原生会话迁移。";
+  if (about) about.textContent = "IDE Hub 0.1.0 · Electron 本地桌面壳 + TypeScript 迁移核心。会话迁移与全局 MCP 配置迁移彼此独立。";
 }
 
 function normalizeError(error) {
@@ -1361,6 +1829,19 @@ function bindEvents() {
     state.search = event.target.value;
     renderSessions();
   });
+  $("#mcpSearchInput").addEventListener("input", (event) => {
+    state.mcpSearch = event.target.value;
+    renderMcp();
+  });
+  $("#mcpScopeSelect").addEventListener("change", (event) => void changeMcpScope(event.target.value));
+  $("#btnMcpWorkspace").addEventListener("click", async () => {
+    if (!await chooseMcpWorkspace()) return;
+    state.mcpSelected.clear();
+    state.mcpPlan = null;
+    state.mcpReceipt = null;
+    state.mcpResolutions = {};
+    await scanMcp(state.mcpScan?.sourceKind !== "mcp-bundle");
+  });
   $("#btnRescan").addEventListener("click", () => void scan());
   $("#btnNewMigration").addEventListener("click", () => openMigration());
   $("#btnExportZip").addEventListener("click", () => openStubWizard("ovExport"));
@@ -1372,7 +1853,9 @@ function bindEvents() {
     renderSessions();
     updateSelectionBar();
   });
-  $("#btnMcpMigration").addEventListener("click", () => openStubWizard("ovMcpMigration"));
+  $("#btnMcpMigration").addEventListener("click", () => void scanMcp(true));
+  $("#btnImportMcp").addEventListener("click", () => void importMcpBundle());
+  $("#btnExportMcp").addEventListener("click", () => void exportMcpBundle());
 
   const migrationOverlay = $("#ovMigration");
   $("[data-wiz-next]", migrationOverlay).addEventListener("click", () => {
@@ -1406,8 +1889,8 @@ function bindEvents() {
     else closeStubWizard(overlay);
   });
   document.addEventListener("click", (event) => {
-    const placeholder = event.target.closest("[data-toast], #view-settings .row-btns .btn, #view-mcp .btn");
-    if (placeholder && !placeholder.matches("#btnMcpMigration")) toast("该操作入口已保留，功能尚未实现", "warn");
+    const placeholder = event.target.closest("[data-toast], #view-settings .row-btns .btn");
+    if (placeholder) toast("该操作入口已保留，功能尚未实现", "warn");
   });
 }
 

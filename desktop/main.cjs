@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, session } = require("electron");
 const { mkdir, realpath, stat, readFile } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -9,6 +9,8 @@ const RENDERER_URL = pathToFileURL(RENDERER_PATH).href;
 const MIGRATION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 let mainWindow = null;
 let migrationRunning = false;
+let mcpMigrationRunning = false;
+let activeMcpBundle = null;
 
 function coreModule(relativePath) {
   return import(pathToFileURL(path.join(APP_ROOT, "dist", "src", relativePath)).href);
@@ -208,6 +210,151 @@ handle("ide-hub:scan", async () => {
         thread.status?.type !== "active",
     })),
   };
+});
+
+handle("ide-hub:mcp-scan", async (input = {}) => {
+  const { scanMcpConfiguration } = await coreModule("mcp/service.js");
+  const normalized = input && typeof input === "object" ? input : {};
+  if (normalized.useCodex === true) activeMcpBundle = null;
+  const workspace = typeof normalized.workspace === "string"
+    ? normalized.workspace
+    : activeMcpBundle?.sourceWorkspace;
+  const targetScope = normalized.targetScope === "project" || normalized.targetScope === "local"
+    ? normalized.targetScope
+    : "user";
+  const result = await scanMcpConfiguration({
+    scope: normalized.scope === "project" ? "project" : "user",
+    targetScope,
+    ...(workspace ? { workspace } : {}),
+    ...(activeMcpBundle ? { sourceBundlePath: activeMcpBundle.path } : {}),
+  });
+  if (activeMcpBundle?.sourceScope === "project") activeMcpBundle.sourceWorkspace = result.sourceWorkspace;
+  return result;
+});
+
+handle("ide-hub:mcp-choose-workspace", async () => {
+  const selected = await dialog.showOpenDialog(mainWindow, {
+    title: "选择 MCP 项目目录",
+    properties: ["openDirectory"],
+  });
+  const [selectedPath] = selected.filePaths;
+  if (selected.canceled || !selectedPath) return { cancelled: true };
+  const canonicalWorkspace = await realpath(selectedPath);
+  const workspaceStat = await stat(canonicalWorkspace);
+  if (!workspaceStat.isDirectory()) throw new Error("MCP workspace is not a directory");
+  return { cancelled: false, workspace: canonicalWorkspace };
+});
+
+handle("ide-hub:mcp-plan", async (request) => {
+  const { planMcpMigration } = await coreModule("mcp/migration.js");
+  if (!request || typeof request !== "object") throw new Error("MCP request is invalid");
+  return planMcpMigration({
+    ...request,
+    ...(activeMcpBundle ? {
+      sourceBundlePath: activeMcpBundle.path,
+      ...(activeMcpBundle.sourceScope === "project" && activeMcpBundle.sourceWorkspace
+        ? { workspace: activeMcpBundle.sourceWorkspace }
+        : {}),
+    } : {}),
+  });
+});
+
+handle("ide-hub:mcp-apply", async (plan) => {
+  if (mcpMigrationRunning) {
+    const error = new Error("Another MCP migration is already running");
+    error.code = "MCP_MIGRATION_ALREADY_RUNNING";
+    throw error;
+  }
+  if (plan?.request?.sourceBundlePath && plan.request.sourceBundlePath !== activeMcpBundle?.path) {
+    throw new Error("MCP bundle source is no longer active; import it again");
+  }
+  if (
+    plan?.request?.sourceBundlePath &&
+    activeMcpBundle?.sourceScope === "project" &&
+    (plan.request.workspace ?? null) !== activeMcpBundle.sourceWorkspace
+  ) {
+    throw new Error("MCP bundle workspace mapping changed; regenerate the diff");
+  }
+  const { applyMcpMigration } = await coreModule("mcp/migration.js");
+  mcpMigrationRunning = true;
+  try {
+    return await applyMcpMigration(plan);
+  } finally {
+    mcpMigrationRunning = false;
+  }
+});
+
+handle("ide-hub:mcp-rollback", async (mcpMigrationId) => {
+  if (mcpMigrationRunning) throw new Error("Please wait for the current MCP migration to finish");
+  const { rollbackMcpMigration } = await coreModule("mcp/migration.js");
+  mcpMigrationRunning = true;
+  try {
+    return await rollbackMcpMigration(String(mcpMigrationId));
+  } finally {
+    mcpMigrationRunning = false;
+  }
+});
+
+handle("ide-hub:mcp-jobs", async () => {
+  const { listMcpJobs } = await coreModule("mcp/migration.js");
+  return listMcpJobs();
+});
+
+handle("ide-hub:mcp-export", async (input) => {
+  if (!Array.isArray(input?.selectedServerIds) || input.selectedServerIds.length === 0) {
+    throw new Error("Select at least one MCP server before export");
+  }
+  const defaultName = `ide-hub-mcp-codex-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}.zip`;
+  const selected = await dialog.showSaveDialog(mainWindow, {
+    title: "导出 MCP 配置包",
+    defaultPath: defaultName,
+    filters: [{ name: "IDE Hub MCP 配置包", extensions: ["zip"] }],
+  });
+  if (selected.canceled || !selected.filePath) return { cancelled: true };
+  const { exportSelectedMcpBundle } = await coreModule("mcp/service.js");
+  const result = await exportSelectedMcpBundle({
+    selectedServerIds: input.selectedServerIds,
+    outputPath: selected.filePath,
+    scope: input.scope === "project" ? "project" : "user",
+    ...(activeMcpBundle?.sourceScope === "project" && activeMcpBundle.sourceWorkspace
+      ? { workspace: activeMcpBundle.sourceWorkspace }
+      : !activeMcpBundle && typeof input.workspace === "string" ? { workspace: input.workspace } : {}),
+    ...(activeMcpBundle ? { sourceBundlePath: activeMcpBundle.path } : {}),
+  });
+  return { cancelled: false, ...result };
+});
+
+handle("ide-hub:mcp-import", async () => {
+  const selected = await dialog.showOpenDialog(mainWindow, {
+    title: "导入 MCP 配置包",
+    properties: ["openFile"],
+    filters: [{ name: "IDE Hub MCP 配置包", extensions: ["zip"] }],
+  });
+  const [filePath] = selected.filePaths;
+  if (selected.canceled || !filePath) return { cancelled: true };
+  const [{ scanMcpConfiguration }, { importMcpBundle }] = await Promise.all([
+    coreModule("mcp/service.js"),
+    coreModule("mcp/bundle.js"),
+  ]);
+  const imported = await importMcpBundle(filePath);
+  let workspace = null;
+  if (imported.scope === "project") {
+    const mapped = await dialog.showOpenDialog(mainWindow, {
+      title: "为项目级 MCP 配置包选择当前电脑的项目目录",
+      properties: ["openDirectory"],
+    });
+    const [mappedPath] = mapped.filePaths;
+    if (mapped.canceled || !mappedPath) return { cancelled: true };
+    workspace = await realpath(mappedPath);
+    const workspaceStat = await stat(workspace);
+    if (!workspaceStat.isDirectory()) throw new Error("MCP workspace is not a directory");
+  }
+  const scan = await scanMcpConfiguration({
+    sourceBundlePath: filePath,
+    ...(workspace ? { workspace } : {}),
+  });
+  activeMcpBundle = { path: filePath, sourceScope: imported.scope, sourceWorkspace: workspace };
+  return { cancelled: false, sourceBundlePath: filePath, scan };
 });
 
 handle("ide-hub:prepare-dsh", async () => {

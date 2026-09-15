@@ -911,6 +911,15 @@ code { font-family: var(--mono); font-size: 11.5px; background: rgba(255,255,255
 }
 .mcp-global-actions > .btn { justify-content: center; width: 100%; }
 .mcp-global-actions > span { font-size: 10.5px; color: var(--muted); text-align: center; }
+.mcp-scope-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.mcp-scope-actions select {
+  min-width: 0; height: 30px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line2); border-radius: 7px; padding: 0 7px; outline: none;
+}
+.mcp-workspace-label {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); text-align: left !important;
+}
 .mcp-portable-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .mcp-portable-actions .btn { justify-content: center; padding: 0 7px; }
 .mcp-server-list { flex: 1; overflow-y: auto; padding: 10px 12px 16px; }
@@ -920,6 +929,8 @@ code { font-family: var(--mono); font-size: 11.5px; background: rgba(255,255,255
   padding: 9px 11px; border-radius: 9px; text-align: left;
   transition: background 0.12s;
 }
+.mcp-server-item > input { width: 14px; height: 14px; accent-color: var(--accent); flex: none; }
+.mcp-server-item .ms-main { min-width: 0; display: flex; flex-direction: column; }
 .mcp-server-item:hover { background: var(--hover); }
 .mcp-server-item.active { background: var(--accent-soft); }
 .ms-name { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
@@ -937,6 +948,33 @@ code { font-family: var(--mono); font-size: 11.5px; background: rgba(255,255,255
 .mcpd-sub { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; }
 .mcpd-actions { margin-left: auto; display: flex; gap: 8px; }
 .mcp-global-banner { margin-bottom: 14px; }
+.mcp-target-card { margin-bottom: 10px; }
+.mcp-target-scope-title { margin-top: 5px; }
+.mcp-target-select,
+.mcp-strategy-select,
+.mcp-rename-input,
+.mcp-field-row select {
+  height: 32px; color: var(--text); background: var(--panel2);
+  border: 1px solid var(--line2); border-radius: 7px; padding: 0 9px; outline: none;
+}
+.mcp-target-select { width: 100%; margin: 3px 0 7px; }
+.mcp-action-row { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 0 15px; }
+.mcp-plan-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 8px; }
+.mcp-plan-head .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
+.mcp-diff-list { display: flex; flex-direction: column; gap: 8px; }
+.mcp-diff-list .mcp-wcard { margin-bottom: 0; }
+.mcp-field-diffs { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 7px; }
+.mcp-field-row {
+  display: grid; grid-template-columns: minmax(90px, 0.8fr) minmax(80px, 1fr) 16px minmax(80px, 1fr) auto;
+  align-items: center; gap: 7px; padding: 4px 0; font-size: 10.5px; color: var(--muted);
+}
+.mcp-field-row code { overflow: hidden; text-overflow: ellipsis; }
+.mcp-field-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-field-row select { height: 27px; font-size: 10.5px; }
+.mcp-strategy-select { height: 29px; font-size: 11.5px; }
+.mcp-rename-input { height: 29px; min-width: 180px; font-family: var(--mono); font-size: 11px; }
+.mcp-result-card { margin-top: 16px; }
+.mcp-verification-list { margin: 8px 0 12px; }
 
 .src-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .src-chip {

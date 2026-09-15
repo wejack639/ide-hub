@@ -116,10 +116,10 @@ IDE Hub 对每个目标端动态声明能力，不在 UI 中统一显示为“10
 | 产品 | 用户级 | 项目级/本地级 | 适配要点 |
 |---|---|---|---|
 | Codex | `~/.codex/config.toml` 的 `mcp_servers` | `<project>/.codex/config.toml`，仅受信任项目 | TOML；支持 stdio、Streamable HTTP、OAuth/环境变量引用；CLI/IDE/Desktop 共用 |
-| Qoder | `~/.qoder/settings.json` 的 `mcpServers` | `.qoder/settings.json`、`.qoder/settings.local.json`、`.mcp.json` | 当前本机还存在 `~/.qoder/mcp.json`，按 legacy 变体只读识别；支持 stdio/SSE/HTTP/WS |
+| Qoder | 国际版 `~/.qoder/mcp.json`；CN `~/.qoder-cn/mcp.json` | 项目 `.qoder/mcp.json` 或 `.mcp.json`；桌面 IDE 未验证 local scope | 以桌面 IDE 的 MCP 设置页与 effective cache 为准；独立 CLI 的 `settings.json` 不能作为 IDE 已识别的证据 |
 | Cursor | `~/.cursor/mcp.json` | `.cursor/mcp.json` | 标准 `mcpServers` JSON；支持 stdio/SSE/HTTP；可优先生成目标原生配置 |
 | ZCode | `~/.zcode/cli/config.json` 的 `mcp.servers` | `.zcode/config.json` | 兼容 `~/.agents/mcp.json` / `<project>/.agents/mcp.json`；`.zcode` 同作用域有配置时会完全压过 `.agents`，不是 merge |
-| CodeBuddy | `~/.codebuddy/.mcp.json` 优先，兼容旧路径 | 项目根 `.mcp.json`，local scope 位于用户配置的 projects 节点 | JSONC；同作用域多个候选文件只读最高优先级，不合并 |
+| CodeBuddy | 国际版与 CN 4.12.0 共用 `~/.codebuddy/mcp.json` | 项目根 `.mcp.json` 或 `mcp.json`；未验证 local scope | 两版保留独立目标身份和原生日志 Gate，但 user scope 写入会同时影响两版；页面必须明确提示共享配置 |
 | Claude Code | `~/.claude.json` 中的 user/local server | 项目根 `.mcp.json` | local/project/user 三作用域及优先级不同；项目 MCP 首次使用需重新批准 |
 | DeepSeek Harness | profile patch | 项目 patch | 一个 MCP server 映射为一个 `@deepseek-ai/dsh-mcp-client` Cordis plugin；首版只生成/合并 patch，不假设普通 `mcp.json` 原生生效 |
 | Pi | 无内置 MCP | 无内置 MCP | 必须由用户明确安装并信任 `pi-mcp-adapter` 等扩展后，才能迁移到其配置格式 |

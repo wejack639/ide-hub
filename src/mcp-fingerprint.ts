@@ -34,7 +34,7 @@ export async function computeMcpFingerprint(
         ? await readCodeBuddyConfigurationFingerprints(workspace, targetProduct)
       : targetProduct === "zcode"
         ? await readEffectiveZcodeMcp(workspace)
-      : await readEffectiveQoderMcp(workspace);
+      : await readEffectiveQoderMcp(workspace, targetProduct);
   const codexSha256 = sha256Text(stableJson(codexMcp));
   const targetSha256 = sha256Text(stableJson(targetMcp));
   return {
@@ -53,12 +53,13 @@ export async function readCodeBuddyConfigurationFingerprints(
   targetProduct: "codebuddy-international" | "codebuddy-cn",
 ): Promise<Record<string, string | null>> {
   const userDataDirectory = targetProduct === "codebuddy-international" ? "CodeBuddy" : "CodeBuddy CN";
-  const cliDirectory = targetProduct === "codebuddy-international" ? ".codebuddy" : ".codebuddycn";
   const candidates = [
-    join(homedir(), cliDirectory, "mcp.json"),
+    // CodeBuddy 4.12.0 and CodeBuddy CN 4.12.0 use the same native
+    // user-scope MCP store even though their app data/log roots are separate.
+    join(homedir(), ".codebuddy", "mcp.json"),
     join(homedir(), "Library", "Application Support", userDataDirectory, "User", "mcp.json"),
     join(workspace, ".mcp.json"),
-    join(workspace, cliDirectory, "mcp.json"),
+    join(workspace, "mcp.json"),
   ];
   const files: Record<string, string | null> = {};
   for (const path of candidates) {
@@ -148,14 +149,16 @@ async function readEffectiveZcodeMcp(workspace: string): Promise<Record<string, 
   return files;
 }
 
-async function readEffectiveQoderMcp(workspace: string): Promise<Record<string, unknown>> {
-  const userRoot = join(homedir(), ".qoder");
+async function readEffectiveQoderMcp(
+  workspace: string,
+  targetProduct: "qoder-international" | "qoder-cn",
+): Promise<Record<string, unknown>> {
+  const dataFolder = targetProduct === "qoder-cn" ? ".qoder-cn" : ".qoder";
+  const userRoot = join(homedir(), dataFolder);
   const candidates = [
     join(userRoot, "mcp.json"),
-    join(userRoot, "settings.json"),
-    join(workspace, ".qoder", "settings.json"),
+    join(workspace, dataFolder, "mcp.json"),
     join(workspace, ".mcp.json"),
-    join(workspace, ".qoder", "settings.local.json"),
   ];
   const merged: Record<string, unknown> = {};
   for (const path of candidates) {

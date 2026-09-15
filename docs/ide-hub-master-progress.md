@@ -1,9 +1,9 @@
 # IDE Hub 任务进度总控
 
 > 文档角色：项目唯一进度真相源（Single Source of Truth）<br>
-> 最后更新：2026-09-14<br>
-> 当前阶段：Phase 0 多目标会话 Gate 收尾 + 桌面 MVP 适配扩展<br>
-> 当前结论：正式本地 `IDE Hub.app` 已接入 Codex → Qoder 国际版 / Qoder CN / Cursor / DeepSeek Harness / ZCode / Pi / Claude Code / CodeBuddy 国际版 / CodeBuddy CN 九个独立目标。CodeBuddy 两版已完成官方 JSON Import、A → A、原生逐消息回读、幂等及各自两轮真实续聊和 History 重开；两版真实官方删除演示仍待验。Claude Code 2.1.170 基线已通过，默认 2.1.268 的新迁移适配仍待完成。迁移本身不调用模型、不迁移或修改 MCP。
+> 最后更新：2026-09-15<br>
+> 当前阶段：Phase 0 多目标会话 Gate 收尾 + 全局 MCP 迁移 Gate<br>
+> 当前结论：正式本地 `IDE Hub.app` 已接入九个会话目标；独立全局 MCP 页面也已接入 Codex 真实扫描、逐项勾选、单目标 diff/apply/native-verify/rollback、任务 journal 和独立配置包。2026-09-15 已纠正 Qoder 与 CodeBuddy CN 的错误落点，并以目标原生 loader 逐个验证 Qoder 双版、Cursor、DSH、ZCode、Claude Code、CodeBuddy 双版 8 个 user-scope 目标；Pi 核心无 MCP adapter，保持不可执行。MCP 全链路不读取会话、不调用模型或模型 API。
 
 ## 1. 使用规则
 
@@ -46,11 +46,11 @@
 | CodeBuddy 双目标迁移实现 / 发布 Gate | `IN_PROGRESS` | 国际版 4.12.0 / CN 4.11.2 的 Import、严格回读、幂等、桌面入口、两轮真实续聊及 History 重开通过；AC-008 两版真实官方删除演示待完成 |
 | Pi 迁移实现 / 发布 Gate | `DONE` | Pi 0.85.1；禁网原生回读、桌面向导/打开、同目录 TUI 恢复与 pwd、GLM-5.3-Flash 实际 3 轮问答和重开通过；正式 UI 复跑保留 11 条上下文及相同文件 hash |
 | ZCode 迁移实现 / 发布 Gate | `BLOCKED` | AC-004 重启打开、AC-007 真实续聊后复跑通过；AC-005 第一轮旧事实验证通过，第二轮下一步因桌面控制无法捕捉窗口待补验，不是模型不可用 |
-| Phase 0 本地验证 | `IN_PROGRESS` | TypeScript 测试入口、请求/结果 Schema、Codex reader、原生轮次投影、journal 和测试已落地；CLI 仅为开发测试入口，不是用户入口 |
+| Phase 0 本地验证 | `IN_PROGRESS` | 110 项测试中 107 通过、3 项既有安装包 Gate 按环境跳过、0 失败；MCP 原生矩阵已通过；会话/MCP 独立 journal 与负向 Schema 已落地 |
 | 本地桌面应用 | `DONE` | Electron 44.1.1 本地 `.app`；IDE Hub 自身无 HTTP 服务；正式原型层可扫描 DSH 并启用一次性本地 bridge |
 | 真实 IDE 迁移 | `IN_PROGRESS` | CodeBuddy 国际版/CN、Qoder 国际版、Cursor、DSH、Pi、Claude 2.1.170 已有真实连续性证据；Qoder CN 受账号状态 `112` 阻断，ZCode 第二轮、Cursor 精确回滚、CodeBuddy 真实官方删除演示待完成 |
 | 跨电脑 ZIP 恢复 | `TODO` | 尚未生成或导入真实 Bundle |
-| 全局 MCP 配置迁移 | `TODO` | 尚未真实写入或回滚任何目标产品配置 |
+| 全局 MCP 配置迁移 | `IN_PROGRESS` | 8 个支持目标已真实 apply/native-loader/handshake/rollback；Qoder 与 CodeBuddy 原生路径已纠正；Pi 无 adapter 分支正确；权限拒绝和文件占用已回归，仅余磁盘耗尽专项注入 |
 
 当前仓库事实：
 
@@ -63,6 +63,7 @@
 - 已有：[SESSION-MIG-006：Codex → Pi](./specs/SESSION-MIG-006-spec.md) 与 [Pi 验收记录](./verification/session-migration-006-pi.md)。
 - 已有：[SESSION-MIG-007：Codex → Claude Code](./specs/SESSION-MIG-007-spec.md) 与 [Claude Code 验收记录](./verification/session-migration-007-claude-code.md)。
 - 已有：[SESSION-MIG-008：Codex → CodeBuddy 国际版 / CN](./specs/SESSION-MIG-008-spec.md) 与 [CodeBuddy 双目标验收记录](./verification/session-migration-008-codebuddy.md)。
+- 已有：[MCP-MIG-001：Codex MCP 按勾选项迁移](./specs/MCP-MIG-001-spec.md) 与 [MCP 验收记录](./verification/mcp-migration-001.md)。
 - `prototype/` 已从参考原型升级为正式 Electron 渲染层；`desktop/` 下旧的简化 HTML/CSS/JS 已删除。
 - 已有 TypeScript 核心、`schemas/`、`src/`、`test/` 和 `desktop/`；已打包 `release/IDE Hub-darwin-arm64/IDE Hub.app`。
 - 桌面壳直接调用 TypeScript 迁移核心，不启动 Web 服务；Tauri/Rust 方案已由当前 Electron 实现取代。
@@ -75,12 +76,14 @@
 |---|---|---|---|
 | M0：产品边界与原型基线 | `DONE` | 会话、会话 ZIP、MCP 已拆分 | 无 |
 | M1：Phase 0 本地可行性 Gate | `IN_PROGRESS` | Qoder 国际版、Cursor、DSH、Pi、Claude 2.1.170、CodeBuddy 国际版/CN 连续性通过；断网总 Gate、Cursor 精确回滚和部分产品剩余项尚未结束 | M0 |
-| M2：Phase 1 桌面 MVP | `IN_PROGRESS` | prototype 布局已正式落地；真实会话列表与 7 步迁移向导完成；ZIP、MCP、任务中心保留入口并标记未实现 | M1 |
+| M2：Phase 1 桌面 MVP | `IN_PROGRESS` | prototype 布局已正式落地；真实会话向导与独立 MCP 选择/迁移/配置包/任务记录完成；会话 ZIP 仍为未实现入口 | M1 |
 | M3：Phase 2 产品矩阵扩展 | `IN_PROGRESS` | DSH 与 CodeBuddy 双 target 已接入正式桌面；CodeBuddy source 及其他 source/target 待实施 | M2 |
 | M4：Phase 3 实验原生投影 | `IN_PROGRESS` | DSH rc.6 原生 seed plugin、版本锁和连续性 Gate 已通过；Pi 基础文本 target 已实现，扩展事件投影仍待实施 | M2 |
 | M5：Phase 4 受控同步 | `WAITING` | 可选，尚未进入 | M2/M4 |
 
 ### 2.3 当前焦点
+
+B7（MCP-MIG-001）：正式全局 MCP 页面已从演示占位切换到真实 Codex effective config。源 `user/project` 与目标 scope 分离；用户逐项勾选 MCP、单选一个目标后才可确认。2026-09-15 修复“Hub 自读即成功”的假 Gate：Qoder user scope 改为国际版 `~/.qoder/mcp.json` / CN `~/.qoder-cn/mcp.json`，CodeBuddy 双版 4.12.0 按实际共用 `~/.codebuddy/mcp.json`。Qoder effective cache、Cursor 原生 list、DSH dump-config、ZCode app-server、Claude mcp get、CodeBuddy 双版扩展日志均以独立本地探针完成原生发现，且 stdio handshake 与回滚通过。Pi 无 adapter，准确保持不可执行。当前只剩磁盘耗尽专项注入，详见 [MCP 验收记录](./verification/mcp-migration-001.md)。
 
 B6（SESSION-MIG-008）：Codex → CodeBuddy 国际版 4.12.0 / CodeBuddy CN 4.11.2 已接入正式桌面。两版用各自官方 History Import 将同一 `temp` 工作区样本写入 A 的原生 MD5 分区，随后分别完成旧截止时间和下一步两轮真实问答；关闭聊天页后从 History 重开同一目标成功。最终回读为国际版 3 条导入消息 + 4 个新增 request / 8 条新增消息、CN 3 条导入消息 + 2 个新增 request / 4 条新增消息。两版官方 Export 已由当前 parser 回读，脱敏结构进入测试。AC-001～007 完成；AC-008 的两版真实官方删除演示未执行，保留当前连续性证据会话。详见 [CodeBuddy 双目标验收记录](./verification/session-migration-008-codebuddy.md)。
 
@@ -145,7 +148,7 @@ P0-07 + P0-08 + P0-11 → M1 Gate 审核 → Phase 1
 | P0-01 | 创建最小 TypeScript core + desktop workspace | `DONE` | 无 | `package.json`、TypeScript core、Electron desktop、build/test/package scripts | `check`、24 项测试、`build`、`.app` 打包启动均通过 |
 | P0-02 | 定义并隔离五类 Schema | `IN_PROGRESS` | P0-01 | Capsule、Handoff、Session Bundle、MCP Registry、MCP Bundle | 迁移请求/结果 Schema 已有；完整五类与领域负向测试待补 |
 | P0-03 | 构造合成 fixture | `IN_PROGRESS` | P0-02 | 最小、普通、大会话、工具调用、中断、dirty workspace fixture | reader/projection/workspace fixture 已有；完整矩阵待补 |
-| P0-04 | Adapter SDK 与双任务 Journal | `IN_PROGRESS` | P0-01/P0-02 | `AgentAdapter`、`McpAdapter`、SessionTask、McpTask | 会话 journal 已落地；通用 SDK 与独立 MCP task/journal 待补 |
+| P0-04 | Adapter SDK 与双任务 Journal | `IN_PROGRESS` | P0-01/P0-02 | `AgentAdapter`、`McpAdapter`、SessionTask、McpTask | 会话 journal 与独立 MCP durable journal/重启恢复已落地；通用 Adapter SDK 仍待统一 |
 
 P0-02 细分验收：
 
@@ -171,9 +174,9 @@ P0-02 细分验收：
 
 | ID | 任务 | 状态 | 依赖 | 交付物 | 完成证据 |
 |---|---|---|---|---|---|
-| P0-09 | Codex/Cursor MCP 只读 Adapter | `TODO` | P0-02/P0-04 | effective config reader、scope/precedence | 合成配置和当前版本真实只读烟测 |
-| P0-10 | 全局 MCP diff/apply/rollback | `TODO` | P0-09 | 产品级任务、逐 server diff、备份、原子写入、回滚 | 目标临时配置 round-trip 与故障注入通过 |
-| P0-11 | Codex → Cursor MCP Gate | `TODO` | P0-10 | 独立 CLI E2E 与 MCP 配置包 round-trip | 见第 6.3 节 Gate |
+| P0-09 | Codex/Cursor MCP 只读 Adapter | `DONE` | P0-02/P0-04 | effective config reader、scope/precedence | Codex user/project fixture、Cursor target readback 与当前 27-server 脱敏真实扫描通过 |
+| P0-10 | 全局 MCP diff/apply/rollback | `IN_PROGRESS` | P0-09 | 产品级任务、逐 server diff、备份、原子写入、原生验证、回滚 | 8 目标真实 native-loader/handshake/rollback、四策略、中断恢复、权限拒绝和文件占用通过；磁盘耗尽专项注入待补 |
+| P0-11 | Codex → Cursor MCP Gate | `DONE` | P0-10 | 独立本地 E2E 与 MCP 配置包 round-trip | Cursor 3.19.7 真实写入，`cursor agent mcp list` 发现精确探针，stdio handshake、回滚及独立 bundle 隔离目录 round-trip 通过 |
 
 ### 5.4 Phase 0 Gate 审核
 
@@ -215,15 +218,15 @@ P0-02 细分验收：
 
 必须同时满足：
 
-- [ ] 任务输入只包含源产品、目标产品、scope 和所选 server。
-- [ ] 任务输入、journal 和配置包中不存在 Session/Capsule ID。
-- [ ] 能读取 Codex 当前有效 MCP 配置和 Cursor 目标配置。
-- [ ] 能展示新增、相同、冲突、不支持四类 diff。
-- [ ] 同名 server 支持跳过、重命名、合并、替换。
-- [ ] 写前备份、原子写入、写后重读验证通过。
-- [ ] 回滚后 Cursor MCP 配置与迁移前语义一致。
-- [ ] 重复执行时重新基于当前目标配置生成 diff，不按会话重复追加。
-- [ ] MCP 独立配置包可在隔离目录导入，不包含会话数据。
+- [x] 任务输入只包含源产品、单个目标产品、源/目标 scope、可选项目映射和所选 server。
+- [x] 任务输入、journal 和配置包中不存在 Session/Capsule ID。
+- [x] 能读取 Codex 当前有效 MCP 配置和 Cursor 目标配置。
+- [x] 能展示新增、相同、冲突、不支持四类 diff。
+- [x] 同名 server 支持跳过、重命名、合并、替换。
+- [x] 写前备份、原子写入、写后重读验证通过。
+- [x] 回滚后 Cursor MCP 配置与迁移前语义一致。
+- [x] 重复执行时重新基于当前目标配置生成 diff，不按会话重复追加。
+- [x] MCP 独立配置包可在隔离目录导入，不包含会话数据。
 
 ### 6.4 Gate 判定
 
@@ -245,19 +248,19 @@ P0-02 细分验收：
 | P1-02 | 产品 Discovery 与会话列表 | `DONE` | P1-01 | 实际展示 Codex 185 个会话、Qoder 国际版 / CN 1.27.1、workspace 和会话详情 |
 | P1-03 | 会话迁移操作流 | `DONE` | P1-02/P0-08 | prototype 7 步向导支持 Qoder 国际版、Qoder CN、Cursor、DSH、ZCode、Pi、Claude Code、CodeBuddy 国际版和 CodeBuddy CN，并接入真实迁移 IPC；需要目标官方确认时保持等待态 |
 | P1-04 | 会话 ZIP 导入/导出向导 | `WAITING` | P1-01/P0-07 | 单/批量会话、路径映射、workspace delta |
-| P1-05 | 全局 MCP 配置页 | `WAITING` | P1-01/P0-11 | 产品级整套迁移；独立任务/备份/回滚 |
-| P1-06 | MCP 独立配置包 UI | `WAITING` | P1-05 | 导入/导出一次，不包含会话 |
+| P1-05 | 全局 MCP 配置页 | `DONE` | P1-01/P0-11 | Codex 真实列表逐项勾选；单目标/独立 scope/diff/冲突处理/确认/结果/回滚 |
+| P1-06 | MCP 独立配置包 UI | `DONE` | P1-05 | 导入后重新勾选目标；导出所选项；checksum 与会话字段隔离 |
 | P1-07 | Context Bridge 全局安装 | `WAITING` | P1-01/P0-08 | 每个目标产品配置一次；工具接收 `migrationId` |
 | P1-08 | Claude Code/Cursor source Adapter | `WAITING` | P0-04 | 真实只读 fixture 与契约测试 |
 | P1-09 | Codex/Qoder/Claude/Cursor/DSH/CodeBuddy target Adapter | `IN_PROGRESS` | P0-08 | CodeBuddy 国际版 4.12.0 / CN 4.11.2 官方 JSON Import、A 分区回读、独立桌面入口和两版真实连续性均通过；真实官方删除演示待验。Claude 2.1.170 通过，当前默认 2.1.268 新迁移适配及其余能力待实施 |
-| P1-10 | 任务中心 | `WAITING` | P1-03/P1-05 | 会话任务和 MCP 任务可区分、可独立回滚 |
+| P1-10 | 任务中心 | `IN_PROGRESS` | P1-03/P1-05 | MCP durable task 已展示状态并可独立回滚；统一会话任务列表仍待接入 |
 | P1-11 | macOS MVP 打包 | `IN_PROGRESS` | P1-01～P1-10 | arm64 `.app` 已本机打包并启动；签名、安装包、离线和两台电脑验收待完成 |
 
 MVP Gate：
 
 - 至少三条真实会话迁移路径完成 sentinel 连续性验证。
 - 至少一次真实两台电脑之间的会话 ZIP 搬运和恢复。
-- 至少两组产品级 MCP 双向迁移完成 apply/verify/rollback。
+- 至少两个 MCP 目标完成 Codex 单向 apply/verify/rollback；本合同不要求目标反向作为配置源。
 - 连续迁移多个会话时，目标 MCP 配置 hash 始终不变。
 
 ## 8. 后续阶段 Backlog
@@ -267,11 +270,11 @@ MVP Gate：
 | ID | 范围 | 状态 |
 |---|---|---|
 | P2-01 | CodeBuddy source/target Adapter | `IN_PROGRESS`（Codex → 国际版/CN target、官方 Import、严格回读、完整连续性与 UI 辅助精确恢复已实现；CodeBuddy source 及两版真实删除 Gate 待完成） |
-| P2-02 | ZCode source/MCP Adapter（原生 target 已由 P0-06E 实现） | `WAITING` |
+| P2-02 | ZCode source/MCP Adapter（原生 target 已由 P0-06E 实现） | `IN_PROGRESS`（Codex → ZCode MCP target 已完成；ZCode source 待实施） |
 | P2-03 | Pi source/target SDK Adapter | `IN_PROGRESS`（Codex → Pi target 及真实连续性 Gate 已通过；Pi source 仍待实施） |
 | P2-04S | DeepSeek Harness source Adapter | `WAITING` |
 | P2-04T | DeepSeek Harness target discovery 与原生会话迁移 | `DONE` |
-| P2-04M | DeepSeek Harness Cordis MCP renderer（独立全局 MCP 任务） | `WAITING` |
+| P2-04M | DeepSeek Harness Cordis MCP renderer（独立全局 MCP 任务） | `DONE`（rc.6 client 版本锁、一个 server 一个 row、原生 dump-config 与 rollback 通过） |
 | P2-05 | Windows/Linux 路径、进程和配置发现 | `WAITING` |
 
 ### Phase 3：实验原生投影
@@ -364,18 +367,18 @@ CodeBuddy 国际版 4.12.0 与 CN 4.11.2 的迁移和真实连续性没有当前
 | D-001 | Rust workspace 的 crate 粒度是否按方案一次建全 | P0-01 | 只建 B0 所需最小 crates，后续按 Gate 扩展 |
 | D-002 | Schema 校验库选型 | P0-02 | 优先选择支持 JSON Schema 2020-12 且可做负向测试的库 |
 | D-003 | Qoder IDE native-history projection 能否在断网且不调用模型时持久化 | P0-06 | IDE 本地逐轮历史写入和 Chat History 可见已通过；未调用推理方法；断网 Gate 尚未执行 |
-| D-004 | MCP merge 的精确定义 | P0-10 | 字段级合并前先定义每种 transport/scope 的冲突规则 |
+| D-004 | MCP merge 的精确定义 | P0-10 | `CLOSED`：只合并相同或不重叠字段；冲突字段逐项选源/目标；transport/endpoint identity 不同禁止 merge |
 
 ## 11. 风险总控
 
 | 风险 | 预警信号 | 应对任务 | 状态 |
 |---|---|---|---|
 | 私有格式变化 | 未知 event/schema fingerprint | P0-03/P0-05 | `OPEN` |
-| 会话与 MCP 再次耦合 | Session schema 出现 MCP 配置字段 | P0-02/P0-04 | `OPEN` |
+| 会话与 MCP 再次耦合 | Session schema 出现 MCP 配置字段 | P0-02/P0-04 | `CLOSED`：IPC、请求、journal、receipt、bundle 均独立，负向测试拒绝跨领域字段 |
 | 只生成文件但上下文不可继续 | 缺少真实下一轮证据 | P0-08 | `CLOSED`：真实下一轮已通过并在 IDE 显示 |
 | 会话 ZIP 无法在另一台电脑恢复 | 依赖源绝对路径 | P0-07/P0-08 | `OPEN` |
-| MCP 重复迁移覆盖目标 | 任务携带 Session ID 或无幂等 diff | P0-10/P0-11 | `OPEN` |
-| 目标配置损坏 | round-trip 或回滚失败 | P0-10 | `OPEN` |
+| MCP 重复迁移覆盖目标 | 任务携带 Session ID 或无幂等 diff | P0-10/P0-11 | `CLOSED`：单目标、显式勾选、fresh diff、stale hash 拒绝与 no-op 均通过 |
+| 目标配置损坏 | round-trip 或回滚失败 | P0-10 | `IN_PROGRESS`：原子写、内容寻址备份、真实回滚、中断恢复、权限拒绝和文件占用通过；磁盘耗尽注入待补 |
 | Cursor 导入后验证失败无法精确删除 | 无公开 delete-by-id 原生命令 | P0-08C | `OPEN`：不直写数据库；继续研究原生删除入口 |
 | DSH Session v0 随版本变化 | 版本或核心包指纹不一致 | P2-04T/P3-02 | `CLOSED`：仅允许 rc.6 精确指纹；未知版本创建前失败 |
 
@@ -427,6 +430,8 @@ CodeBuddy 国际版 4.12.0 与 CN 4.11.2 的迁移和真实连续性没有当前
 
 | 日期 | 变更 | 影响 |
 |---|---|---|
+| 2026-09-15 | MCP 目标原生识别 Gate 纠偏 | 修正 Qoder 桌面 `mcp.json` 与 CodeBuddy 双版共享 `~/.codebuddy/mcp.json`；`COMPLETED` 必须有目标原生发现，8 个支持目标逐个完成独立探针、handshake 和回滚；Pi 保持不支持 |
+| 2026-09-14 | MCP-MIG-001 全局按勾选项迁移初版 | Codex effective scan、源/目标 scope、四冲突策略、durable journal、独立 MCP bundle 和正式桌面页完成；当日 8 目标证据仅为 Hub readback/rollback，不能证明 IDE 原生识别，已由 2026-09-15 Gate 取代 |
 | 2026-09-14 | Codex → CodeBuddy 国际版 / CN 双 target 与真实连续性落地 | 两版官方 Import、A → A、严格回读、幂等、桌面向导、旧事实/下一步两轮续聊、History 重开及官方 Export 结构回归通过；真实官方删除演示待验 |
 | 2026-09-02 | 创建任务进度总控文档 | 建立真实进度基线；M0 完成，M1 尚未开始 |
 | 2026-09-02 | 固化 Session/MCP 两条独立任务线 | 会话向导和会话 ZIP 不包含 MCP；MCP 按产品全局迁移一次 |

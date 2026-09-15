@@ -81,12 +81,21 @@
             <input id="mcpSearchInput" placeholder="搜索 server">
           </div>
           <div class="mcp-global-actions">
-            <button class="btn btn-primary btn-sm" id="btnMcpMigration">迁移整套配置</button>
-            <div class="mcp-portable-actions">
-              <button class="btn btn-ghost btn-sm" data-toast="已选择 MCP 配置包（演示）">导入配置包</button>
-              <button class="btn btn-ghost btn-sm" data-toast="已导出独立 MCP 配置包（演示）">导出配置包</button>
+            <div class="mcp-scope-actions">
+              <select id="mcpScopeSelect" aria-label="Codex MCP 源配置范围">
+                <option value="user">Codex 源：全局（user）</option>
+                <option value="project">Codex 源：项目（project）</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="btnMcpWorkspace" hidden>选择项目</button>
             </div>
-            <span>按产品迁移一次 · 与任何会话无关</span>
+            <span class="mcp-workspace-label" id="mcpWorkspaceLabel"></span>
+            <button class="btn btn-ghost btn-sm" id="btnMcpMigration">重新扫描 Codex MCP</button>
+            <div class="mcp-portable-actions">
+              <button class="btn btn-ghost btn-sm" id="btnImportMcp">导入配置包</button>
+              <button class="btn btn-ghost btn-sm" id="btnExportMcp">导出所选 MCP</button>
+            </div>
+            <span>配置包会原样保存所选 MCP 的配置值，请按本地配置文件保管。</span>
+            <span>勾选 MCP → 单选目标应用 → 确定迁移</span>
           </div>
           <div id="mcpServerList" class="mcp-server-list"></div>
         </aside>
@@ -765,99 +774,6 @@
 
     <footer class="wiz-foot">
       <div class="wiz-foot-info">解压至临时 staging · 校验通过才写入 · 失败保留 staging</div>
-      <div class="wiz-foot-btns">
-        <button class="btn btn-ghost" data-wiz-close>取消</button>
-        <button class="btn btn-ghost" data-wiz-prev>上一步</button>
-        <button class="btn btn-primary" data-wiz-next>下一步</button>
-      </div>
-    </footer>
-  </div>
-</div>
-
-<!-- ============================================================= -->
-<!-- Wizard: Global MCP migration (3 steps)                          -->
-<!-- ============================================================= -->
-<div class="overlay" id="ovMcpMigration" data-wiz="mcp-global">
-  <div class="wizard">
-    <header class="wiz-head">
-      <div class="wiz-title">
-        <h2>迁移全局 MCP 配置</h2>
-        <span class="wiz-sub">Codex → Cursor · 独立配置任务 · 不关联任何会话</span>
-      </div>
-      <button class="icon-btn wiz-close" data-wiz-close>✕</button>
-    </header>
-
-    <div class="wiz-steps" data-steps></div>
-
-    <div class="wiz-body">
-      <div class="wiz-pane" data-pane="1">
-        <h3 class="pane-title">选择源产品和目标产品</h3>
-        <p class="pane-sub">读取源产品当前生效的 MCP 配置，整体迁移到一个或多个目标产品。完成一次后，后续迁移会话不会再重复处理 MCP。</p>
-        <div class="card">
-          <div class="card-title">来源</div>
-          <div class="src-chips">
-            <button class="src-chip selected"><span class="prod-tag codex">Codex</span><span class="sc-scope">~/.codex/config.toml · 3 servers</span></button>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-title">目标</div>
-          <div class="target-checks">
-            <label class="tgt-chip on"><input type="checkbox" checked><span class="prod-tag cursor">Cursor</span></label>
-            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag qoder">Qoder CN</span></label>
-            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag claude">Claude Code</span></label>
-            <label class="tgt-chip"><input type="checkbox"><span class="prod-tag zcode">ZCode</span></label>
-          </div>
-        </div>
-        <div class="banner banner-info">任务粒度是“源产品 → 目标产品”，不是“会话 → 目标产品”。</div>
-      </div>
-
-      <div class="wiz-pane" data-pane="2">
-        <h3 class="pane-title">选择配置并预览差异</h3>
-        <div class="mcp-wcard">
-          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">context7</span></label><span class="badge b-ok">新增</span><span class="badge b-muted">stdio</span></div>
-          <div class="mcpw-foot ok">Codex user scope → Cursor user scope · 字段兼容</div>
-        </div>
-        <div class="mcp-wcard">
-          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">nacos-dev</span></label><span class="badge b-ok">新增</span><span class="badge b-muted">stdio</span></div>
-          <div class="mcpw-foot ok">环境变量引用保持不变</div>
-        </div>
-        <div class="mcp-wcard conflict">
-          <div class="mcpw-head"><label><input type="checkbox" checked> <span class="mcpw-name">mysql-dev</span></label><span class="badge b-warn">同名冲突</span></div>
-          <div class="mcpw-strategy">
-            <span class="st-label">冲突策略</span>
-            <label class="radio-chip"><input type="radio" name="globalMysqlStrategy">跳过</label>
-            <label class="radio-chip selected"><input type="radio" name="globalMysqlStrategy" checked>重命名为 mysql-dev-2</label>
-            <label class="radio-chip"><input type="radio" name="globalMysqlStrategy">替换</label>
-          </div>
-        </div>
-        <div class="banner banner-info">本次只写 Cursor 的全局 MCP 配置，不创建、读取或修改任何会话。</div>
-      </div>
-
-      <div class="wiz-pane" data-pane="3">
-        <h3 class="pane-title">执行全局配置迁移</h3>
-        <div class="ops">
-          <div class="op-row"><span class="op-badge b-backup">备份</span><div class="op-main"><code>~/.cursor/mcp.json</code><div class="op-sub">写入前创建独立 MCP 配置备份</div></div></div>
-          <div class="op-row"><span class="op-badge b-write">写入</span><div class="op-main"><code>~/.cursor/mcp.json</code><div class="op-sub">新增 2 · 重命名 1 · 与会话数据无关</div></div></div>
-        </div>
-        <div class="state-timeline" id="mcpGlobalTimeline"></div>
-        <div class="run-result" id="mcpGlobalResult" hidden>
-          <div class="result-card">
-            <div class="result-icon ok">✓</div>
-            <div>
-              <h4>全局 MCP 配置迁移完成</h4>
-              <p class="muted">Codex → Cursor · 3 个 server · 此后迁移任意会话都不会重复写入。</p>
-            </div>
-          </div>
-          <div class="result-actions">
-            <button class="btn btn-ghost" data-toast="已从备份恢复 Cursor MCP 配置（演示）">回滚配置</button>
-            <button class="btn btn-primary" data-wiz-close>完成</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <footer class="wiz-foot">
-      <div class="wiz-foot-info">全局配置任务 · 独立备份与回滚 · 不关联 Session ID</div>
       <div class="wiz-foot-btns">
         <button class="btn btn-ghost" data-wiz-close>取消</button>
         <button class="btn btn-ghost" data-wiz-prev>上一步</button>
